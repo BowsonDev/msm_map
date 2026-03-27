@@ -89,8 +89,9 @@ function buildPopupHtml(company) {
 }
 
 function addMarker(company) {
-  if (!company.lat || !company.lng) return;
-  const marker = L.marker([company.lat, company.lng], {
+  const coords = APP.getCompanyCoords(company);
+  if (!coords.lat || !coords.lng) return;
+  const marker = L.marker([coords.lat, coords.lng], {
     icon: makeSvgIcon(industryColor(company.industry)),
     title: company.short_name || company.name,
   });
@@ -131,8 +132,9 @@ function showRouteOnlyMarkers(routeStops) {
   _routeMode = true;
   removeAllMarkers();
   routeStops.forEach((company, idx) => {
-    if (!company.lat || !company.lng) return;
-    const marker = L.marker([company.lat, company.lng], {
+    const coords = APP.getCompanyCoords(company);
+    if (!coords.lat || !coords.lng) return;
+    const marker = L.marker([coords.lat, coords.lng], {
       icon: makeSvgIcon('#ff5722', String(idx + 1), 32),
       title: company.short_name || company.name,
       zIndexOffset: idx * 10,

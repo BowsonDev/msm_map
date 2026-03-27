@@ -468,6 +468,43 @@ body {
 .popup-btn-route { background: var(--primary); color: white; border-color: var(--primary); }
 .popup-btn-route:hover { background: var(--primary-dark); }
 
+/* ── Custom Address section (inside detail modal) ── */
+.custom-addr-section {
+  margin-top: 14px; padding: 12px 14px;
+  background: var(--bg); border-radius: var(--radius);
+  border: 1px solid var(--border);
+}
+.custom-addr-header {
+  display: flex; align-items: center; gap: 7px; margin-bottom: 8px;
+}
+.custom-addr-title {
+  flex: 1; font-size: 12px; font-weight: 600;
+  color: var(--text-light); text-transform: uppercase; letter-spacing: .5px;
+}
+.addr-badge {
+  font-size: 11px; padding: 2px 8px; border-radius: 8px; font-weight: 500;
+}
+.addr-badge.system { background: white; color: var(--text-light); border: 1px solid var(--border); }
+.addr-badge.custom { background: #e8f5e9; color: #2e7d32; border: 1px solid #a5d6a7; }
+.btn-text-sm {
+  font-size: 11px; color: var(--text-light); background: none;
+  border: none; cursor: pointer; padding: 0; text-decoration: underline;
+}
+.btn-text-sm:hover { color: var(--danger); }
+.custom-addr-current {
+  font-size: 12px; color: #2e7d32; margin-bottom: 7px;
+  padding: 4px 8px; background: #e8f5e9; border-radius: 4px;
+}
+.custom-addr-row { display: flex; gap: 6px; align-items: center; }
+.custom-addr-input {
+  flex: 1; padding: 6px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: 13px; outline: none;
+}
+.custom-addr-input:focus { border-color: var(--primary); }
+.custom-addr-note { font-size: 11px; color: #2e7d32; margin-top: 7px; }
+.card-custom-badge { font-size: 12px; }
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }

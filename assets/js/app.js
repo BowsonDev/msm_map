@@ -10,12 +10,14 @@ const APP = {
   endLocation: null,
   endSameAsStart: true,
   autoSort: true,
+  customAddresses: {},   // key → { custom_address, custom_lat, custom_lng, updated_at }
   pendingImportData: null,
 
   // ── Bootstrap ──────────────────────────────────────────────────────────
   async init() {
     try { initMap(); } catch (e) { console.error('Map init failed:', e); }
     await this.loadData();
+    this.loadCustomAddresses();
     this.buildFuse();
     this.renderTagFilters();
     this.applySearch();
@@ -131,6 +133,7 @@ const APP = {
 
   companyCardHtml(c) {
     const inRoute = this.route.some(r => r.id === c.id);
+    const hasCustom = !!(this.customAddresses[this.getCompanyKey(c)]?.custom_address);
     const tags = (c.tags || []).slice(0, 3).map(t => `<span class="tag">${t}</span>`).join('');
     const rev = c.revenue_100m ? `${Number(c.revenue_100m).toLocaleString()} 億` : '';
     const emp = c.employees ? `${Number(c.employees).toLocaleString()} 人` : '';
@@ -142,6 +145,7 @@ const APP = {
         <div class="card-header">
           ${c.rank ? `<span class="company-rank">#${c.rank}</span>` : ''}
           <span class="company-name">${c.short_name || c.name}</span>
+          ${hasCustom ? `<span class="card-custom-badge" title="已設定自訂地址">✏️</span>` : ''}
           <span class="city-badge">${c.city || ''}</span>
         </div>
         <div class="card-tags">
@@ -181,8 +185,35 @@ const APP = {
     const emp = c.employees ? `${Number(c.employees).toLocaleString()} 人` : '–';
     const tags = [c.industry, ...(c.tags || [])].filter(Boolean)
       .map(t => `<span class="tag">${t}</span>`).join('');
-    const mapUrl = `https://www.openstreetmap.org/?mlat=${c.lat}&mlon=${c.lng}&zoom=16`;
-    const gMapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(c.address || c.name)}`;
+
+    // Custom address state
+    const custom = this.customAddresses[this.getCompanyKey(c)];
+    const hasCustom = !!(custom && custom.custom_address);
+    const displayCoords = this.getCompanyCoords(c);
+    const mapUrl  = `https://www.openstreetmap.org/?mlat=${displayCoords.lat}&mlon=${displayCoords.lng}&zoom=16`;
+    const gMapUrl = `https://www.google.com/maps/search/?api=1&query=${encodeURIComponent(
+      hasCustom ? custom.custom_address : (c.address || c.name)
+    )}`;
+
+    const customSection = `
+      <div class="custom-addr-section">
+        <div class="custom-addr-header">
+          <span class="custom-addr-title">實際拜訪地址</span>
+          ${hasCustom
+            ? `<span class="addr-badge custom">✏️ 自訂</span>
+               <button class="btn-text-sm" onclick="APP.clearCustomAddress(${c.id})">恢復系統</button>`
+            : `<span class="addr-badge system">系統地址</span>`}
+        </div>
+        ${hasCustom ? `<div class="custom-addr-current">${custom.custom_address}</div>` : ''}
+        <div class="custom-addr-row">
+          <input id="custom-addr-input" class="custom-addr-input"
+                 placeholder="輸入實際地址…"
+                 value="${hasCustom ? custom.custom_address.replace(/"/g, '&quot;') : ''}">
+          <button id="custom-addr-btn" class="btn-sm btn-sm-primary"
+                  onclick="APP.geocodeAndSaveCustomAddress(${c.id})">更新座標</button>
+        </div>
+        ${hasCustom ? `<div class="custom-addr-note">✅ 座標已更新（${custom.updated_at}）</div>` : ''}
+      </div>`;
 
     document.getElementById('detail-content').innerHTML = `
       <div class="detail-company-name">${c.name}</div>
@@ -195,11 +226,12 @@ const APP = {
         <div class="detail-item"><label>年營收</label><span>${rev}</span></div>
         <div class="detail-item"><label>員工人數</label><span>${emp}</span></div>
         <div class="detail-item"><label>縣市</label><span>${c.city || '–'}${c.district ? ' ' + c.district : ''}</span></div>
-        <div class="detail-item full"><label>地址</label><span>${c.address || '–'}</span></div>
+        <div class="detail-item full"><label>系統地址</label><span>${c.address || '–'}</span></div>
         <div class="detail-item"><label>電話</label><span>${c.phone || '–'}</span></div>
         <div class="detail-item"><label>網站</label><span>${c.website ? `<a href="${c.website}" target="_blank" rel="noopener">${c.website.replace(/^https?:\/\//, '')}</a>` : '–'}</span></div>
         ${c.notes ? `<div class="detail-item full"><label>備註</label><span>${c.notes}</span></div>` : ''}
       </div>
+      ${customSection}
       <div class="detail-actions">
         <a href="${mapUrl}" target="_blank" rel="noopener" class="btn-secondary" style="text-decoration:none;display:inline-block">🗺 OpenStreetMap</a>
         <a href="${gMapUrl}" target="_blank" rel="noopener" class="btn-secondary" style="text-decoration:none;display:inline-block">📍 Google Maps</a>
@@ -209,7 +241,7 @@ const APP = {
       </div>`;
 
     document.getElementById('detail-modal').style.display = 'flex';
-    panTo(c.lat, c.lng, 15);
+    if (displayCoords.lat && displayCoords.lng) panTo(displayCoords.lat, displayCoords.lng, 15);
   },
 
   // ── Route Planning ─────────────────────────────────────────────────────
@@ -261,11 +293,10 @@ const APP = {
 
   // Nearest-neighbour greedy sort to minimise total travel distance
   nearestNeighborSort() {
-    const withCoord    = this.route.filter(c => c.lat && c.lng);
-    const withoutCoord = this.route.filter(c => !c.lat || !c.lng);
+    const withCoord    = this.route.filter(c => { const p = this.getCompanyCoords(c); return p.lat && p.lng; });
+    const withoutCoord = this.route.filter(c => { const p = this.getCompanyCoords(c); return !p.lat || !p.lng; });
     if (withCoord.length <= 1) return;
 
-    // Start from the set start location, or Taiwan centre as fallback
     const origin = this.startLocation || { lat: 23.8, lng: 121.0 };
     const remaining = [...withCoord];
     const sorted = [];
@@ -275,11 +306,11 @@ const APP = {
       let nearestIdx = 0;
       let nearestDist = Infinity;
       remaining.forEach((stop, i) => {
-        const d = haversine(cur, stop);
+        const d = haversine(cur, this.getCompanyCoords(stop));
         if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
       });
       sorted.push(remaining[nearestIdx]);
-      cur = remaining[nearestIdx];
+      cur = this.getCompanyCoords(remaining[nearestIdx]);
       remaining.splice(nearestIdx, 1);
     }
     this.route = [...sorted, ...withoutCoord];
@@ -389,8 +420,15 @@ const APP = {
       }
       if (this.startLocation) waypoints.push(this.startLocation);
 
-      // ── 拜訪站 ──
-      this.route.forEach(c => waypoints.push({ lat: c.lat, lng: c.lng, name: c.short_name || c.name }));
+      // ── 拜訪站 ──（優先使用自訂座標）
+      this.route.forEach(c => {
+        const coords = this.getCompanyCoords(c);
+        if (!coords.lat || !coords.lng) {
+          this.notify(`「${c.short_name || c.name}」無有效座標，已略過`, 'error');
+          return;
+        }
+        waypoints.push({ lat: coords.lat, lng: coords.lng, name: c.short_name || c.name });
+      });
 
       // ── 終點 ──
       if (this.endSameAsStart) {
@@ -560,15 +598,21 @@ const APP = {
 
   // ── Export CSV ─────────────────────────────────────────────────────────
   exportCSV() {
-    const rows = this.companies.map(c => ({
-      id: c.id, rank: c.rank, name: c.name, short_name: c.short_name,
-      english_name: c.english_name, tax_id: c.tax_id, capital: c.capital,
-      city: c.city, district: c.district, address: c.address,
-      lat: c.lat, lng: c.lng, phone: c.phone, website: c.website,
-      employees: c.employees, revenue_100m: c.revenue_100m,
-      industry: c.industry, tags: (c.tags || []).join(','),
-      stock_code: c.stock_code, listed: c.listed, notes: c.notes,
-    }));
+    const rows = this.companies.map(c => {
+      const custom = this.customAddresses[this.getCompanyKey(c)] || {};
+      return {
+        id: c.id, rank: c.rank, name: c.name, short_name: c.short_name,
+        english_name: c.english_name, tax_id: c.tax_id, capital: c.capital,
+        city: c.city, district: c.district, address: c.address,
+        lat: c.lat, lng: c.lng, phone: c.phone, website: c.website,
+        employees: c.employees, revenue_100m: c.revenue_100m,
+        industry: c.industry, tags: (c.tags || []).join(','),
+        stock_code: c.stock_code, listed: c.listed, notes: c.notes,
+        custom_address: custom.custom_address || '',
+        custom_lat: custom.custom_lat || '',
+        custom_lng: custom.custom_lng || '',
+      };
+    });
     const csv = Papa.unparse(rows);
     const blob = new Blob(['\uFEFF' + csv], { type: 'text/csv;charset=utf-8;' });
     const url = URL.createObjectURL(blob);
@@ -580,6 +624,69 @@ const APP = {
 
   // ── Helpers ────────────────────────────────────────────────────────────
   getCompanyById(id) { return this.companies.find(c => c.id === id) || null; },
+
+  // ── Custom Address ─────────────────────────────────────────────────────
+  // localStorage key per company (prefer tax_id)
+  getCompanyKey(c) { return c.tax_id || `__id_${c.id}`; },
+
+  // Returns the effective {lat,lng} — custom first, then system
+  getCompanyCoords(c) {
+    const custom = this.customAddresses[this.getCompanyKey(c)];
+    if (custom && custom.custom_lat && custom.custom_lng)
+      return { lat: custom.custom_lat, lng: custom.custom_lng };
+    return { lat: c.lat, lng: c.lng };
+  },
+
+  loadCustomAddresses() {
+    try {
+      const raw = localStorage.getItem('msm_map_custom_addresses');
+      this.customAddresses = raw ? JSON.parse(raw) : {};
+    } catch (e) { this.customAddresses = {}; }
+  },
+
+  _saveCustomStore() {
+    localStorage.setItem('msm_map_custom_addresses', JSON.stringify(this.customAddresses));
+  },
+
+  clearCustomAddress(id) {
+    const c = this.getCompanyById(id);
+    if (!c) return;
+    delete this.customAddresses[this.getCompanyKey(c)];
+    this._saveCustomStore();
+    this.showDetail(id);
+    refreshMarkers(this.filtered);
+    this.notify('已恢復系統地址', 'info');
+  },
+
+  async geocodeAndSaveCustomAddress(id) {
+    const c = this.getCompanyById(id);
+    if (!c) return;
+    const input = document.getElementById('custom-addr-input');
+    const address = (input && input.value || '').trim();
+    if (!address) { this.notify('請輸入地址', 'error'); return; }
+
+    const btn = document.getElementById('custom-addr-btn');
+    if (btn) { btn.disabled = true; btn.textContent = '定位中…'; }
+
+    const geo = await geocodeAddress(address);
+
+    if (btn) { btn.disabled = false; btn.textContent = '更新座標'; }
+
+    if (!geo) { this.notify('無法定位此地址，請修正後再試', 'error'); return; }
+
+    const key = this.getCompanyKey(c);
+    this.customAddresses[key] = {
+      custom_address: address,
+      custom_lat:  parseFloat(geo.lat.toFixed(6)),
+      custom_lng:  parseFloat(geo.lng.toFixed(6)),
+      updated_at:  new Date().toISOString().slice(0, 10),
+    };
+    this._saveCustomStore();
+    this.notify(`已更新「${c.short_name || c.name}」的拜訪座標`, 'success');
+    this.showDetail(id);                            // re-render detail panel
+    refreshMarkers(this.filtered);                  // redraw map markers
+    if (this.route.some(r => r.id === id)) highlightRouteMarkers(this.route);
+  },
 
   onMarkerClick(id) {
     this.selectCard(id);
