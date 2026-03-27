@@ -220,9 +220,7 @@ const APP = {
     this.route.push(c);
     this.renderRoute();
     this.renderCompanyList();
-    this.notify(`已加入：${c.short_name || c.name}`, 'success');
-    // Switch to route tab
-    this.switchTab('route');
+    this.notify(`已加入：${c.short_name || c.name}，共 ${this.route.length} 站`, 'success');
   },
 
   addToRouteById(id) { this.addToRoute(id); },
