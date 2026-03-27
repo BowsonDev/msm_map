@@ -11,7 +11,7 @@ const APP = {
 
   // ── Bootstrap ──────────────────────────────────────────────────────────
   async init() {
-    initMap();
+    try { initMap(); } catch (e) { console.error('Map init failed:', e); }
     await this.loadData();
     this.buildFuse();
     this.renderTagFilters();
