@@ -231,8 +231,13 @@ const APP = {
     this.route = this.route.filter(r => r.id !== id);
     this.renderRoute();
     this.renderCompanyList();
-    highlightRouteMarkers(this.route);
-    if (!this.route.length) { clearRouteLine(); clearStartMarker(); }
+    if (!this.route.length) {
+      clearRouteLine();
+      clearStartMarker();
+      exitRouteMode(this.filtered);
+    } else {
+      highlightRouteMarkers(this.route);
+    }
   },
 
   clearRoute() {
@@ -241,7 +246,7 @@ const APP = {
     document.getElementById('start-address').value = '';
     clearRouteLine();
     clearStartMarker();
-    highlightRouteMarkers([]);
+    exitRouteMode(this.filtered); // restore all filtered markers
     this.renderRoute();
     this.renderCompanyList();
   },
@@ -317,6 +322,9 @@ const APP = {
 
     drawRouteLine(result.geometry);
     fitBounds(waypoints.map(wp => [wp.lat, wp.lng]));
+
+    // Hide all unrelated markers; show only route stops
+    showRouteOnlyMarkers(this.route);
 
     document.getElementById('total-distance').textContent = formatDistance(result.distance);
     document.getElementById('total-duration').textContent = formatDuration(result.duration);
