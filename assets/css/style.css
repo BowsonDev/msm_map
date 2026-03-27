@@ -263,7 +263,11 @@ body {
 /* ── Route tab ── */
 .route-start {
   padding: 10px 8px; border-bottom: 1px solid var(--border);
-  margin-bottom: 8px;
+  margin-bottom: 4px;
+}
+.route-endpoint {
+  padding: 10px 8px; border-top: 1px solid var(--border);
+  margin-top: 4px;
 }
 .route-start-label {
   font-size: 12px; font-weight: 600; color: var(--text-light);
@@ -276,14 +280,27 @@ body {
   font-size: 13px; outline: none;
 }
 .start-input-group input:focus { border-color: var(--primary); }
+.start-input-group input:disabled { background: var(--bg); color: var(--text-light); cursor: not-allowed; }
+.end-same-row {
+  display: flex; align-items: center; gap: 6px;
+  margin-top: 7px; font-size: 12px; color: var(--text-light); cursor: pointer;
+}
+.end-same-row input[type="checkbox"] { cursor: pointer; }
 
 .route-item {
-  display: flex; align-items: center; gap: 8px;
-  padding: 9px 10px; background: white;
+  display: flex; align-items: center; gap: 6px;
+  padding: 8px 8px; background: white;
   border: 1px solid var(--border); border-radius: var(--radius);
   margin-bottom: 6px; user-select: none;
 }
 .route-item:hover { border-color: #ff9800; }
+.route-item.dragging { opacity: .35; border-style: dashed; }
+.route-item.drag-over { border-color: var(--primary); background: var(--primary-light); }
+.route-drag-handle {
+  cursor: grab; color: #bdc1c6; font-size: 15px;
+  padding: 0 2px; flex-shrink: 0; line-height: 1;
+}
+.route-drag-handle:active { cursor: grabbing; }
 .route-number {
   width: 24px; height: 24px; border-radius: 50%;
   background: #ff5722; color: white; font-size: 12px; font-weight: 700;

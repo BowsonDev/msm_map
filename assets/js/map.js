@@ -1,5 +1,5 @@
 // ── Map Module (Leaflet + OpenStreetMap) ─────────────────────────────────
-let _map, _clusterGroup, _routeLayer, _startMarker;
+let _map, _clusterGroup, _routeLayer, _startMarker, _endMarker;
 const _markers = {}; // id -> L.Marker
 let _routeMode = false; // true = only route stop markers are shown
 
@@ -126,22 +126,16 @@ function highlightRouteMarkers(routeStops) {
 }
 
 // Called after route is calculated: hide all non-route markers,
-// show stops with numbered pins, last stop in blue as 回程點.
+// show stops with orange numbered pins.
 function showRouteOnlyMarkers(routeStops) {
   _routeMode = true;
   removeAllMarkers();
-  const last = routeStops.length - 1;
   routeStops.forEach((company, idx) => {
     if (!company.lat || !company.lng) return;
-    const isLast = idx === last;
-    // Last stop = blue "回", others = orange numbered
-    const color = isLast ? '#1a73e8' : '#ff5722';
-    const label = isLast ? '回' : String(idx + 1);
-    const size  = isLast ? 36 : 32;
     const marker = L.marker([company.lat, company.lng], {
-      icon: makeSvgIcon(color, label, size),
+      icon: makeSvgIcon('#ff5722', String(idx + 1), 32),
       title: company.short_name || company.name,
-      zIndexOffset: isLast ? 100 : idx * 10,
+      zIndexOffset: idx * 10,
     });
     marker.bindPopup(buildPopupHtml(company), { maxWidth: 300 });
     marker.on('click', () => APP.onMarkerClick(company.id));
@@ -153,7 +147,21 @@ function showRouteOnlyMarkers(routeStops) {
 // Exit route mode: restore all company markers
 function exitRouteMode(companies) {
   _routeMode = false;
+  clearEndMarker();
   refreshMarkers(companies);
+}
+
+function setEndMarker(lat, lng, label) {
+  clearEndMarker();
+  _endMarker = L.marker([lat, lng], {
+    icon: makeSvgIcon('#e53935', '終', 36),
+    title: label || '終點',
+    zIndexOffset: 1000,
+  }).addTo(_map).bindPopup(`<b>終點</b>${label ? '<br>' + label : ''}`);
+}
+
+function clearEndMarker() {
+  if (_endMarker) { _map.removeLayer(_endMarker); _endMarker = null; }
 }
 
 function drawRouteLine(geometry) {

@@ -7,6 +7,8 @@ const APP = {
   searchQuery: '',
   fuse: null,
   startLocation: null,
+  endLocation: null,
+  endSameAsStart: true,
   pendingImportData: null,
 
   // ── Bootstrap ──────────────────────────────────────────────────────────
@@ -241,10 +243,15 @@ const APP = {
   clearRoute() {
     this.route = [];
     this.startLocation = null;
+    this.endLocation = null;
     document.getElementById('start-address').value = '';
+    document.getElementById('end-address').value = '';
+    document.getElementById('end-same-as-start').checked = true;
+    document.getElementById('end-address').disabled = true;
+    this.endSameAsStart = true;
     clearRouteLine();
     clearStartMarker();
-    exitRouteMode(this.filtered); // restore all filtered markers
+    exitRouteMode(this.filtered); // restores all markers + clears end marker
     this.renderRoute();
     this.renderCompanyList();
   },
@@ -255,6 +262,7 @@ const APP = {
     document.getElementById('route-count').textContent = count;
     document.getElementById('route-actions').style.display = count ? 'flex' : 'none';
     document.getElementById('route-summary').style.display = 'none';
+    document.getElementById('route-endpoint-section').style.display = count ? 'block' : 'none';
 
     if (!count) {
       el.innerHTML = `<div class="empty-state"><div class="empty-icon">🗺</div><p>尚無行程<br>從搜尋結果點選「+ 行程」加入拜訪對象</p></div>`;
@@ -262,7 +270,8 @@ const APP = {
     }
 
     el.innerHTML = this.route.map((c, i) => `
-      <div class="route-item" data-id="${c.id}">
+      <div class="route-item" draggable="true" data-id="${c.id}" data-idx="${i}">
+        <span class="route-drag-handle" title="拖曳排序">⠿</span>
         <span class="route-number">${i + 1}</span>
         <div class="route-item-info">
           <div class="route-company-name">${c.short_name || c.name}</div>
@@ -270,6 +279,32 @@ const APP = {
         </div>
         <button class="route-item-remove" title="移除" onclick="APP.removeFromRoute(${c.id})">×</button>
       </div>`).join('');
+
+    // Drag-to-reorder
+    let dragIdx = null;
+    el.querySelectorAll('.route-item').forEach(item => {
+      item.addEventListener('dragstart', e => {
+        dragIdx = +item.dataset.idx;
+        item.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      item.addEventListener('dragend', () => item.classList.remove('dragging'));
+      item.addEventListener('dragover', e => { e.preventDefault(); item.classList.add('drag-over'); });
+      item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+      item.addEventListener('drop', e => {
+        e.preventDefault();
+        item.classList.remove('drag-over');
+        const dropIdx = +item.dataset.idx;
+        if (dragIdx !== null && dragIdx !== dropIdx) {
+          const [moved] = this.route.splice(dragIdx, 1);
+          this.route.splice(dropIdx, 0, moved);
+          dragIdx = null;
+          this.renderRoute();
+          this.renderCompanyList();
+          highlightRouteMarkers(this.route);
+        }
+      });
+    });
 
     highlightRouteMarkers(this.route);
   },
@@ -282,10 +317,8 @@ const APP = {
     try {
       let waypoints = [];
 
-      // Start location
-      if (this.startLocation) {
-        waypoints.push(this.startLocation);
-      } else {
+      // ── 起點 ──
+      if (!this.startLocation) {
         const addrInput = document.getElementById('start-address').value.trim();
         if (addrInput) {
           this.notify('正在定位起點…', 'info');
@@ -294,13 +327,34 @@ const APP = {
             this.startLocation = geo;
             setStartMarker(geo.lat, geo.lng, addrInput);
           } else {
-            this.notify('無法定位起點地址，請直接使用公司位置', 'error');
+            this.notify('無法定位起點地址', 'error');
           }
         }
-        if (this.startLocation) waypoints.push(this.startLocation);
       }
+      if (this.startLocation) waypoints.push(this.startLocation);
 
+      // ── 拜訪站 ──
       this.route.forEach(c => waypoints.push({ lat: c.lat, lng: c.lng, name: c.short_name || c.name }));
+
+      // ── 終點 ──
+      if (this.endSameAsStart) {
+        // Return to start only if we have a start location
+        if (this.startLocation) waypoints.push(this.startLocation);
+      } else {
+        if (!this.endLocation) {
+          const endInput = document.getElementById('end-address').value.trim();
+          if (endInput) {
+            this.notify('正在定位終點…', 'info');
+            const geo = await geocodeAddress(endInput);
+            if (geo) {
+              this.endLocation = geo;
+            } else {
+              this.notify('無法定位終點地址', 'error');
+            }
+          }
+        }
+        if (this.endLocation) waypoints.push(this.endLocation);
+      }
 
       if (waypoints.length < 2) {
         this.notify('至少需要 2 個地點才能計算路線', 'error');
@@ -311,7 +365,7 @@ const APP = {
       this.showRouteSummary(result, waypoints);
     } finally {
       btn.disabled = false;
-      btn.textContent = '計算行車路線';
+      btn.textContent = '🚗 計算行車路線';
     }
   },
 
@@ -321,8 +375,16 @@ const APP = {
     drawRouteLine(result.geometry);
     fitBounds(waypoints.map(wp => [wp.lat, wp.lng]));
 
-    // Hide all unrelated markers; show only route stops
+    // Show only route-relevant markers
     showRouteOnlyMarkers(this.route);
+
+    // End marker — only if end ≠ start
+    if (!this.endSameAsStart && this.endLocation) {
+      const endLabel = document.getElementById('end-address').value.trim() || '終點';
+      setEndMarker(this.endLocation.lat, this.endLocation.lng, endLabel);
+    } else {
+      clearEndMarker();
+    }
 
     document.getElementById('total-distance').textContent = formatDistance(result.distance);
     document.getElementById('total-duration').textContent = formatDuration(result.duration);
@@ -516,10 +578,47 @@ const APP = {
     document.getElementById('clear-route-btn').addEventListener('click', () => this.clearRoute());
     document.getElementById('use-gps').addEventListener('click', () => this.useGPS());
 
-    // Start address: clear cached on change
+    // Start address: clear cached coords on change
     document.getElementById('start-address').addEventListener('input', () => {
       this.startLocation = null;
       clearStartMarker();
+    });
+
+    // End point: "同起點" checkbox
+    document.getElementById('end-same-as-start').addEventListener('change', e => {
+      this.endSameAsStart = e.target.checked;
+      const endInput = document.getElementById('end-address');
+      endInput.disabled = this.endSameAsStart;
+      if (this.endSameAsStart) {
+        endInput.value = '';
+        this.endLocation = null;
+        clearEndMarker();
+      }
+    });
+
+    // End address: clear cached coords on change
+    document.getElementById('end-address').addEventListener('input', () => {
+      this.endLocation = null;
+      clearEndMarker();
+    });
+
+    // GPS for end point
+    document.getElementById('use-gps-end').addEventListener('click', () => {
+      if (!navigator.geolocation) { this.notify('此瀏覽器不支援定位', 'error'); return; }
+      this.notify('正在取得目前位置…', 'info');
+      navigator.geolocation.getCurrentPosition(
+        pos => {
+          const { latitude: lat, longitude: lng } = pos.coords;
+          this.endLocation = { lat, lng };
+          document.getElementById('end-same-as-start').checked = false;
+          this.endSameAsStart = false;
+          document.getElementById('end-address').disabled = false;
+          document.getElementById('end-address').value = '目前位置';
+          this.notify('已設定目前位置為終點', 'success');
+        },
+        err => this.notify('無法取得位置：' + err.message, 'error'),
+        { timeout: 10000 }
+      );
     });
 
     // Import / Export

@@ -87,7 +87,7 @@
     <div class="tab-content" id="tab-route">
       <!-- Start location -->
       <div class="route-start">
-        <div class="route-start-label">起點設定</div>
+        <div class="route-start-label">🟢 起點</div>
         <div class="start-input-group">
           <input type="text" id="start-address" placeholder="輸入起點地址（選填）…">
           <button class="btn-icon" id="use-gps" title="使用目前位置 GPS">📍</button>
@@ -100,6 +100,19 @@
           <div class="empty-icon">🗺</div>
           <p>尚無行程<br>從搜尋結果點選「+ 行程」加入拜訪對象</p>
         </div>
+      </div>
+
+      <!-- End location -->
+      <div class="route-endpoint" id="route-endpoint-section" style="display:none">
+        <div class="route-start-label">🔴 終點</div>
+        <div class="start-input-group">
+          <input type="text" id="end-address" placeholder="輸入終點地址…" disabled>
+          <button class="btn-icon" id="use-gps-end" title="使用目前位置為終點">📍</button>
+        </div>
+        <label class="end-same-row">
+          <input type="checkbox" id="end-same-as-start" checked>
+          <span>同起點（回到出發地）</span>
+        </label>
       </div>
 
       <!-- Actions -->
