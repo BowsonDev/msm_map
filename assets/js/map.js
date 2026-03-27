@@ -1,6 +1,7 @@
 // ── Map Module (Leaflet + OpenStreetMap) ─────────────────────────────────
 let _map, _clusterGroup, _routeLayer, _startMarker;
 const _markers = {}; // id -> L.Marker
+let _routeMode = false; // true = only route stop markers are shown
 
 // Industry → colour mapping
 const INDUSTRY_COLORS = {
@@ -110,17 +111,49 @@ function refreshMarkers(companies) {
 }
 
 function highlightRouteMarkers(routeStops) {
-  // Reset all
+  if (_routeMode) return; // in route mode, markers are managed by showRouteOnlyMarkers
+  // Reset all to industry color
   Object.entries(_markers).forEach(([id, m]) => {
     const c = APP.getCompanyById(+id);
     if (c) m.setIcon(makeSvgIcon(industryColor(c.industry)));
   });
-  // Highlight route stops
+  // Highlight route stops with numbered orange pins
   routeStops.forEach((company, idx) => {
     if (_markers[company.id]) {
       _markers[company.id].setIcon(makeSvgIcon('#ff5722', String(idx + 1)));
     }
   });
+}
+
+// Called after route is calculated: hide all non-route markers,
+// show stops with numbered pins, last stop in blue as 回程點.
+function showRouteOnlyMarkers(routeStops) {
+  _routeMode = true;
+  removeAllMarkers();
+  const last = routeStops.length - 1;
+  routeStops.forEach((company, idx) => {
+    if (!company.lat || !company.lng) return;
+    const isLast = idx === last;
+    // Last stop = blue "回", others = orange numbered
+    const color = isLast ? '#1a73e8' : '#ff5722';
+    const label = isLast ? '回' : String(idx + 1);
+    const size  = isLast ? 36 : 32;
+    const marker = L.marker([company.lat, company.lng], {
+      icon: makeSvgIcon(color, label, size),
+      title: company.short_name || company.name,
+      zIndexOffset: isLast ? 100 : idx * 10,
+    });
+    marker.bindPopup(buildPopupHtml(company), { maxWidth: 300 });
+    marker.on('click', () => APP.onMarkerClick(company.id));
+    _markers[company.id] = marker;
+    _clusterGroup.addLayer(marker);
+  });
+}
+
+// Exit route mode: restore all company markers
+function exitRouteMode(companies) {
+  _routeMode = false;
+  refreshMarkers(companies);
 }
 
 function drawRouteLine(geometry) {
@@ -138,12 +171,9 @@ function clearRouteLine() {
 function setStartMarker(lat, lng, label) {
   if (_startMarker) _map.removeLayer(_startMarker);
   _startMarker = L.marker([lat, lng], {
-    icon: L.divIcon({
-      html: `<div style="width:22px;height:22px;border-radius:50%;background:#34a853;border:3px solid white;box-shadow:0 2px 6px rgba(0,0,0,.35)"></div>`,
-      className: '',
-      iconSize: [22, 22],
-      iconAnchor: [11, 11],
-    }),
+    icon: makeSvgIcon('#34a853', '起', 36),
+    title: label || '起點',
+    zIndexOffset: 1000,
   }).addTo(_map).bindPopup(`<b>起點</b>${label ? '<br>' + label : ''}`);
 }
 
