@@ -9,6 +9,7 @@ const APP = {
   startLocation: null,
   endLocation: null,
   endSameAsStart: true,
+  autoSort: true,
   pendingImportData: null,
 
   // ── Bootstrap ──────────────────────────────────────────────────────────
@@ -220,6 +221,7 @@ const APP = {
       return;
     }
     this.route.push(c);
+    if (this.autoSort) this.nearestNeighborSort();
     this.renderRoute();
     this.renderCompanyList();
     this.notify(`已加入：${c.short_name || c.name}，共 ${this.route.length} 站`, 'success');
@@ -244,6 +246,7 @@ const APP = {
     this.route = [];
     this.startLocation = null;
     this.endLocation = null;
+    this.autoSort = true;
     document.getElementById('start-address').value = '';
     document.getElementById('end-address').value = '';
     document.getElementById('end-same-as-start').checked = true;
@@ -254,6 +257,44 @@ const APP = {
     exitRouteMode(this.filtered); // restores all markers + clears end marker
     this.renderRoute();
     this.renderCompanyList();
+  },
+
+  // Nearest-neighbour greedy sort to minimise total travel distance
+  nearestNeighborSort() {
+    const withCoord    = this.route.filter(c => c.lat && c.lng);
+    const withoutCoord = this.route.filter(c => !c.lat || !c.lng);
+    if (withCoord.length <= 1) return;
+
+    // Start from the set start location, or Taiwan centre as fallback
+    const origin = this.startLocation || { lat: 23.8, lng: 121.0 };
+    const remaining = [...withCoord];
+    const sorted = [];
+    let cur = origin;
+
+    while (remaining.length > 0) {
+      let nearestIdx = 0;
+      let nearestDist = Infinity;
+      remaining.forEach((stop, i) => {
+        const d = haversine(cur, stop);
+        if (d < nearestDist) { nearestDist = d; nearestIdx = i; }
+      });
+      sorted.push(remaining[nearestIdx]);
+      cur = remaining[nearestIdx];
+      remaining.splice(nearestIdx, 1);
+    }
+    this.route = [...sorted, ...withoutCoord];
+  },
+
+  toggleAutoSort() {
+    this.autoSort = !this.autoSort;
+    if (this.autoSort) {
+      this.nearestNeighborSort();
+      this.renderRoute();
+      this.renderCompanyList();
+      highlightRouteMarkers(this.route);
+    } else {
+      this.renderRoute(); // re-render to show drag handles
+    }
   },
 
   renderRoute() {
@@ -269,42 +310,57 @@ const APP = {
       return;
     }
 
-    el.innerHTML = this.route.map((c, i) => `
-      <div class="route-item" draggable="true" data-id="${c.id}" data-idx="${i}">
-        <span class="route-drag-handle" title="拖曳排序">⠿</span>
+    const sortBtnLabel = this.autoSort
+      ? '🔀 依距離排序 ✓'
+      : '✋ 手動排序';
+    const sortBtnClass = this.autoSort ? 'on' : 'off';
+    const sortHint = this.autoSort
+      ? `${count} 站（已依距離最佳化）`
+      : `${count} 站（手動排序）`;
+
+    el.innerHTML = `
+      <div class="route-sort-bar">
+        <span>${sortHint}</span>
+        <button class="sort-toggle-btn ${sortBtnClass}" onclick="APP.toggleAutoSort()">${sortBtnLabel}</button>
+      </div>
+      ${this.route.map((c, i) => `
+      <div class="route-item" draggable="${!this.autoSort}" data-id="${c.id}" data-idx="${i}">
+        <span class="route-drag-handle" style="visibility:${this.autoSort ? 'hidden' : 'visible'}" title="拖曳排序">⠿</span>
         <span class="route-number">${i + 1}</span>
         <div class="route-item-info">
           <div class="route-company-name">${c.short_name || c.name}</div>
           <div class="route-company-city">${c.city || ''}　${(c.tags || []).slice(0, 2).join(' · ')}</div>
         </div>
         <button class="route-item-remove" title="移除" onclick="APP.removeFromRoute(${c.id})">×</button>
-      </div>`).join('');
+      </div>`).join('')}`;
 
-    // Drag-to-reorder
-    let dragIdx = null;
-    el.querySelectorAll('.route-item').forEach(item => {
-      item.addEventListener('dragstart', e => {
-        dragIdx = +item.dataset.idx;
-        item.classList.add('dragging');
-        e.dataTransfer.effectAllowed = 'move';
+    // Drag-to-reorder (only when autoSort is OFF)
+    if (!this.autoSort) {
+      let dragIdx = null;
+      el.querySelectorAll('.route-item').forEach(item => {
+        item.addEventListener('dragstart', e => {
+          dragIdx = +item.dataset.idx;
+          item.classList.add('dragging');
+          e.dataTransfer.effectAllowed = 'move';
+        });
+        item.addEventListener('dragend', () => item.classList.remove('dragging'));
+        item.addEventListener('dragover', e => { e.preventDefault(); item.classList.add('drag-over'); });
+        item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
+        item.addEventListener('drop', e => {
+          e.preventDefault();
+          item.classList.remove('drag-over');
+          const dropIdx = +item.dataset.idx;
+          if (dragIdx !== null && dragIdx !== dropIdx) {
+            const [moved] = this.route.splice(dragIdx, 1);
+            this.route.splice(dropIdx, 0, moved);
+            dragIdx = null;
+            this.renderRoute();
+            this.renderCompanyList();
+            highlightRouteMarkers(this.route);
+          }
+        });
       });
-      item.addEventListener('dragend', () => item.classList.remove('dragging'));
-      item.addEventListener('dragover', e => { e.preventDefault(); item.classList.add('drag-over'); });
-      item.addEventListener('dragleave', () => item.classList.remove('drag-over'));
-      item.addEventListener('drop', e => {
-        e.preventDefault();
-        item.classList.remove('drag-over');
-        const dropIdx = +item.dataset.idx;
-        if (dragIdx !== null && dragIdx !== dropIdx) {
-          const [moved] = this.route.splice(dragIdx, 1);
-          this.route.splice(dropIdx, 0, moved);
-          dragIdx = null;
-          this.renderRoute();
-          this.renderCompanyList();
-          highlightRouteMarkers(this.route);
-        }
-      });
-    });
+    }
 
     highlightRouteMarkers(this.route);
   },
@@ -412,6 +468,12 @@ const APP = {
         setStartMarker(lat, lng, '目前位置');
         document.getElementById('start-address').value = '目前位置';
         panTo(lat, lng, 13);
+        if (this.autoSort && this.route.length > 1) {
+          this.nearestNeighborSort();
+          this.renderRoute();
+          this.renderCompanyList();
+          highlightRouteMarkers(this.route);
+        }
         this.notify('已設定目前位置為起點', 'success');
       },
       err => this.notify('無法取得位置：' + err.message, 'error'),
@@ -578,7 +640,7 @@ const APP = {
     document.getElementById('clear-route-btn').addEventListener('click', () => this.clearRoute());
     document.getElementById('use-gps').addEventListener('click', () => this.useGPS());
 
-    // Start address: clear cached coords on change
+    // Start address: clear cached coords on change; re-sort when GPS is set
     document.getElementById('start-address').addEventListener('input', () => {
       this.startLocation = null;
       clearStartMarker();
