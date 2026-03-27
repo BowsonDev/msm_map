@@ -92,7 +92,7 @@ function addMarker(company) {
   const coords = APP.getCompanyCoords(company);
   if (!coords.lat || !coords.lng) return;
   const marker = L.marker([coords.lat, coords.lng], {
-    icon: makeSvgIcon(industryColor(company.industry)),
+    icon: makeSvgIcon(APP.getMarkerColor(company)),
     title: company.short_name || company.name,
   });
   marker.bindPopup(buildPopupHtml(company), { maxWidth: 300 });
@@ -113,10 +113,10 @@ function refreshMarkers(companies) {
 
 function highlightRouteMarkers(routeStops) {
   if (_routeMode) return; // in route mode, markers are managed by showRouteOnlyMarkers
-  // Reset all to industry color
+  // Reset all to effective color (status > industry)
   Object.entries(_markers).forEach(([id, m]) => {
     const c = APP.getCompanyById(+id);
-    if (c) m.setIcon(makeSvgIcon(industryColor(c.industry)));
+    if (c) m.setIcon(makeSvgIcon(APP.getMarkerColor(c)));
   });
   // Highlight route stops with numbered orange pins
   routeStops.forEach((company, idx) => {
