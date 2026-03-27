@@ -1,0 +1,2 @@
+id,rank,name,short_name,english_name,tax_id,capital,city,district,address,lat,lng,phone,website,employees,revenue_100m,industry,tags,stock_code,listed,notes
+31,31,範例科技股份有限公司,範例科技,Example Tech,12345678,1000000000,台北市,信義區,台北市信義區範例路1號,25.0330,121.5654,02-1234-5678,https://example.com,500,10,IC設計,"IC設計,半導體",1234,true,
