@@ -107,10 +107,7 @@ function formatDuration(minutes) {
 
 function buildGoogleMapsUrl(waypoints) {
   if (waypoints.length < 2) return null;
-  const origin = `${waypoints[0].lat},${waypoints[0].lng}`;
-  const dest = `${waypoints[waypoints.length - 1].lat},${waypoints[waypoints.length - 1].lng}`;
-  const mid = waypoints.slice(1, -1).map(wp => `${wp.lat},${wp.lng}`).join('|');
-  const base = 'https://www.google.com/maps/dir/';
-  const parts = [origin, ...(mid ? [mid] : []), dest];
-  return base + parts.join('/');
+  // Each waypoint is its own /lat,lng/ path segment — supports up to 10 stops
+  const parts = waypoints.map(wp => `${wp.lat},${wp.lng}`);
+  return 'https://www.google.com/maps/dir/' + parts.join('/');
 }
