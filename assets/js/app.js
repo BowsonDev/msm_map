@@ -1,4 +1,12 @@
 // ── Main Application ──────────────────────────────────────────────────────
+// ── CRM status definitions ─────────────────────────────────────────────────
+const STATUS_LIST = ['undeveloped', 'evaluating', 'closed'];
+const STATUS_INFO = {
+  undeveloped: { label: '未開發', icon: '🔴', color: '#e53935' },
+  evaluating:  { label: '評估中', icon: '🟡', color: '#f9a825' },
+  closed:      { label: '已成交', icon: '🟢', color: '#43a047' },
+};
+
 const APP = {
   companies: [],
   filtered: [],
@@ -11,6 +19,8 @@ const APP = {
   endSameAsStart: true,
   autoSort: true,
   customAddresses: {},   // key → { custom_address, custom_lat, custom_lng, updated_at }
+  crm: {},               // key → { status, notes:[{text,time}], last_visit }
+  settings: { reminderDays: 30 },
   pendingImportData: null,
 
   // ── Bootstrap ──────────────────────────────────────────────────────────
@@ -18,6 +28,8 @@ const APP = {
     try { initMap(); } catch (e) { console.error('Map init failed:', e); }
     await this.loadData();
     this.loadCustomAddresses();
+    this.loadCRM();
+    this.loadSettings();
     this.buildFuse();
     this.renderTagFilters();
     this.applySearch();
@@ -128,24 +140,32 @@ const APP = {
       card.querySelector('.btn-detail')?.addEventListener('click', () => this.showDetail(id));
       card.querySelector('.btn-route-add')?.addEventListener('click', () => this.addToRoute(id));
       card.querySelector('.btn-route-remove')?.addEventListener('click', () => this.removeFromRoute(id));
+      card.querySelector('.btn-status-cycle')?.addEventListener('click', () => this.cycleStatus(id));
     });
   },
 
   companyCardHtml(c) {
-    const inRoute = this.route.some(r => r.id === c.id);
+    const inRoute   = this.route.some(r => r.id === c.id);
     const hasCustom = !!(this.customAddresses[this.getCompanyKey(c)]?.custom_address);
-    const tags = (c.tags || []).slice(0, 3).map(t => `<span class="tag">${t}</span>`).join('');
-    const rev = c.revenue_100m ? `${Number(c.revenue_100m).toLocaleString()} 億` : '';
-    const emp = c.employees ? `${Number(c.employees).toLocaleString()} 人` : '';
-    const routeBtn = inRoute
+    const crm       = this.crm[this.getCompanyKey(c)] || {};
+    const si        = crm.status ? STATUS_INFO[crm.status] : null;
+    const overdue   = this.isOverdueVisit(c);
+    const tags      = (c.tags || []).slice(0, 3).map(t => `<span class="tag">${t}</span>`).join('');
+    const rev       = c.revenue_100m ? `${Number(c.revenue_100m).toLocaleString()} 億` : '';
+    const emp       = c.employees   ? `${Number(c.employees).toLocaleString()} 人` : '';
+    const routeBtn  = inRoute
       ? `<button class="btn-sm btn-sm-danger btn-route-remove">✓ 已加入</button>`
       : `<button class="btn-sm btn-sm-primary btn-route-add">+ 行程</button>`;
+    const statusBtn = si
+      ? `<button class="btn-status btn-status-set btn-status-cycle" style="border-color:${si.color};color:${si.color}">${si.icon} ${si.label}</button>`
+      : `<button class="btn-status btn-status-unset btn-status-cycle">＋ 設狀態</button>`;
     return `
       <div class="company-card${inRoute ? ' in-route' : ''}" data-id="${c.id}">
         <div class="card-header">
           ${c.rank ? `<span class="company-rank">#${c.rank}</span>` : ''}
           <span class="company-name">${c.short_name || c.name}</span>
           ${hasCustom ? `<span class="card-custom-badge" title="已設定自訂地址">✏️</span>` : ''}
+          ${overdue   ? `<span class="card-overdue-badge" title="距上次備註已超過 ${this.settings.reminderDays} 天">⚠️</span>` : ''}
           <span class="city-badge">${c.city || ''}</span>
         </div>
         <div class="card-tags">
@@ -158,6 +178,7 @@ const APP = {
           ${c.stock_code ? `<span>📈 ${c.stock_code}</span>` : ''}
         </div>
         <div class="card-actions">
+          ${statusBtn}
           <button class="btn-sm btn-sm-outline btn-detail">詳情</button>
           ${routeBtn}
         </div>
@@ -215,10 +236,44 @@ const APP = {
         ${hasCustom ? `<div class="custom-addr-note">✅ 座標已更新（${custom.updated_at}）</div>` : ''}
       </div>`;
 
+    // CRM: status + notes
+    const crm  = this.crm[this.getCompanyKey(c)] || {};
+    const si   = crm.status ? STATUS_INFO[crm.status] : null;
+    const statusRow = `
+      <div class="crm-status-row">
+        <span class="crm-label">拜訪狀態</span>
+        <div class="crm-status-btns">
+          ${STATUS_LIST.map(s => {
+            const info = STATUS_INFO[s];
+            const active = crm.status === s;
+            return `<button class="crm-status-pick${active ? ' active' : ''}"
+              style="${active ? `background:${info.color};border-color:${info.color};color:white` : `border-color:${info.color};color:${info.color}`}"
+              onclick="APP.setStatus(${c.id},'${s}')">${info.icon} ${info.label}</button>`;
+          }).join('')}
+          ${crm.status ? `<button class="crm-status-pick crm-clear" onclick="APP.setStatus(${c.id},null)">✕ 清除</button>` : ''}
+        </div>
+      </div>`;
+
+    const notesList = (crm.notes || []).slice().reverse().map(n => `
+      <div class="note-item">
+        <span class="note-time">${n.time}</span>
+        <p class="note-text">${n.text.replace(/\n/g, '<br>')}</p>
+      </div>`).join('') || `<p class="no-notes">尚無備註</p>`;
+
+    const notesSection = `
+      <div class="crm-notes-section">
+        <div class="crm-label" style="margin-bottom:8px">拜訪備註</div>
+        <div class="notes-list">${notesList}</div>
+        <textarea id="note-input" class="note-input" rows="3" placeholder="新增備註…"></textarea>
+        <button class="btn-sm btn-sm-primary" style="margin-top:6px;width:100%"
+                onclick="APP.addNote(${c.id})">📝 新增備註（自動加時間戳記）</button>
+      </div>`;
+
     document.getElementById('detail-content').innerHTML = `
       <div class="detail-company-name">${c.name}</div>
       <div class="detail-short">${[c.short_name, c.english_name].filter(Boolean).join(' · ')}</div>
       <div class="detail-tags">${tags}</div>
+      ${statusRow}
       <div class="detail-grid">
         <div class="detail-item"><label>統一編號</label><span>${c.tax_id || '–'}</span></div>
         <div class="detail-item"><label>股票代號</label><span>${c.stock_code || '–'}</span></div>
@@ -229,9 +284,9 @@ const APP = {
         <div class="detail-item full"><label>系統地址</label><span>${c.address || '–'}</span></div>
         <div class="detail-item"><label>電話</label><span>${c.phone || '–'}</span></div>
         <div class="detail-item"><label>網站</label><span>${c.website ? `<a href="${c.website}" target="_blank" rel="noopener">${c.website.replace(/^https?:\/\//, '')}</a>` : '–'}</span></div>
-        ${c.notes ? `<div class="detail-item full"><label>備註</label><span>${c.notes}</span></div>` : ''}
       </div>
       ${customSection}
+      ${notesSection}
       <div class="detail-actions">
         <a href="${mapUrl}" target="_blank" rel="noopener" class="btn-secondary" style="text-decoration:none;display:inline-block">🗺 OpenStreetMap</a>
         <a href="${gMapUrl}" target="_blank" rel="noopener" class="btn-secondary" style="text-decoration:none;display:inline-block">📍 Google Maps</a>
@@ -599,7 +654,11 @@ const APP = {
   // ── Export CSV ─────────────────────────────────────────────────────────
   exportCSV() {
     const rows = this.companies.map(c => {
-      const custom = this.customAddresses[this.getCompanyKey(c)] || {};
+      const key    = this.getCompanyKey(c);
+      const custom = this.customAddresses[key] || {};
+      const crm    = this.crm[key] || {};
+      const notesText = (crm.notes || [])
+        .map(n => `[${n.time}] ${n.text}`).join('\n');
       return {
         id: c.id, rank: c.rank, name: c.name, short_name: c.short_name,
         english_name: c.english_name, tax_id: c.tax_id, capital: c.capital,
@@ -609,8 +668,11 @@ const APP = {
         industry: c.industry, tags: (c.tags || []).join(','),
         stock_code: c.stock_code, listed: c.listed, notes: c.notes,
         custom_address: custom.custom_address || '',
-        custom_lat: custom.custom_lat || '',
-        custom_lng: custom.custom_lng || '',
+        custom_lat:     custom.custom_lat || '',
+        custom_lng:     custom.custom_lng || '',
+        status:         crm.status     ? STATUS_INFO[crm.status].label : '',
+        last_visit:     crm.last_visit || '',
+        visit_notes:    notesText,
       };
     });
     const csv = Papa.unparse(rows);
@@ -646,6 +708,99 @@ const APP = {
 
   _saveCustomStore() {
     localStorage.setItem('msm_map_custom_addresses', JSON.stringify(this.customAddresses));
+  },
+
+  // ── CRM ────────────────────────────────────────────────────────────────
+  loadCRM() {
+    try {
+      const raw = localStorage.getItem('msm_map_crm');
+      this.crm = raw ? JSON.parse(raw) : {};
+    } catch (e) { this.crm = {}; }
+  },
+
+  _saveCRM() { localStorage.setItem('msm_map_crm', JSON.stringify(this.crm)); },
+
+  loadSettings() {
+    try {
+      const raw = localStorage.getItem('msm_map_settings');
+      if (raw) Object.assign(this.settings, JSON.parse(raw));
+    } catch (e) {}
+    const el = document.getElementById('reminder-days');
+    if (el) el.value = this.settings.reminderDays;
+  },
+
+  saveSettings() {
+    const days = parseInt(document.getElementById('reminder-days').value, 10);
+    if (days > 0) {
+      this.settings.reminderDays = days;
+      localStorage.setItem('msm_map_settings', JSON.stringify(this.settings));
+      this.renderCompanyList();
+      this.notify('設定已儲存', 'success');
+    }
+  },
+
+  // Returns the effective marker color: status > industry
+  getMarkerColor(c) {
+    const crm = this.crm[this.getCompanyKey(c)];
+    if (crm && crm.status && STATUS_INFO[crm.status])
+      return STATUS_INFO[crm.status].color;
+    return industryColor(c.industry);
+  },
+
+  cycleStatus(id) {
+    const c   = this.getCompanyById(id);
+    if (!c) return;
+    const key = this.getCompanyKey(c);
+    if (!this.crm[key]) this.crm[key] = {};
+    const cur = this.crm[key].status;
+    const idx = STATUS_LIST.indexOf(cur);
+    this.crm[key].status = STATUS_LIST[(idx + 1) % STATUS_LIST.length];
+    this._saveCRM();
+    this.renderCompanyList();
+    refreshMarkers(this.filtered);
+    if (this.route.some(r => r.id === id)) highlightRouteMarkers(this.route);
+  },
+
+  setStatus(id, status) {
+    const c = this.getCompanyById(id);
+    if (!c) return;
+    const key = this.getCompanyKey(c);
+    if (!this.crm[key]) this.crm[key] = {};
+    if (status) this.crm[key].status = status;
+    else delete this.crm[key].status;
+    this._saveCRM();
+    this.showDetail(id);
+    this.renderCompanyList();
+    refreshMarkers(this.filtered);
+    if (this.route.some(r => r.id === id)) highlightRouteMarkers(this.route);
+  },
+
+  addNote(id) {
+    const c    = this.getCompanyById(id);
+    if (!c) return;
+    const ta   = document.getElementById('note-input');
+    const text = (ta && ta.value || '').trim();
+    if (!text) { this.notify('請輸入備註內容', 'error'); return; }
+    const key  = this.getCompanyKey(c);
+    if (!this.crm[key]) this.crm[key] = {};
+    if (!this.crm[key].notes) this.crm[key].notes = [];
+    const now  = new Date();
+    const time = `${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+    this.crm[key].notes.push({ text, time });
+    this.crm[key].last_visit = time;
+    this._saveCRM();
+    this.notify('備註已儲存', 'success');
+    this.showDetail(id);
+    this.renderCompanyList(); // refresh ⚠️ badges
+  },
+
+  // Returns true if last note older than reminderDays
+  isOverdueVisit(c) {
+    const crm = this.crm[this.getCompanyKey(c)];
+    if (!crm || !crm.last_visit) return false;
+    const last = new Date(crm.last_visit.replace(/\//g, '-').replace(' ', 'T'));
+    const diffDays = (Date.now() - last.getTime()) / 86400000;
+    return diffDays > this.settings.reminderDays;
   },
 
   clearCustomAddress(id) {
@@ -789,6 +944,16 @@ const APP = {
         { timeout: 10000 }
       );
     });
+
+    // Settings modal
+    document.getElementById('settings-btn').addEventListener('click', () => {
+      document.getElementById('reminder-days').value = this.settings.reminderDays;
+      document.getElementById('settings-modal').style.display = 'flex';
+    });
+    document.getElementById('settings-close').addEventListener('click', () => {
+      document.getElementById('settings-modal').style.display = 'none';
+    });
+    document.getElementById('reminder-days').addEventListener('change', () => this.saveSettings());
 
     // Import / Export
     document.getElementById('import-btn').addEventListener('click', () => this.openImport());
