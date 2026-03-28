@@ -34,6 +34,7 @@
 
   <div class="header-actions">
     <button class="btn-secondary" id="crm-page-btn">📋 客戶總覽</button>
+    <button class="btn-secondary" id="schedule-page-btn">📅 排程管理</button>
     <button class="btn-secondary" id="import-btn">📥 匯入 CSV</button>
     <button class="btn-secondary" id="export-btn">📤 匯出 CSV</button>
     <button class="btn-icon" id="settings-btn" title="設定">⚙️</button>
@@ -245,6 +246,26 @@
         <span class="settings-unit">天</span>
       </div>
       <p class="settings-hint">距上次備註超過此天數，卡片顯示 ⚠️ 提醒</p>
+    </div>
+  </div>
+</div>
+
+<!-- ── Schedule Full-Page ────────────────────────────────────────────────── -->
+<div id="schedule-page" style="display:none">
+  <div class="sch-page-header">
+    <div class="sch-page-title">📅 拜訪排程</div>
+    <div class="sch-page-header-actions">
+      <button class="btn-secondary" id="sch-page-today-btn">📌 跳至今日</button>
+      <button class="btn-icon" id="sch-page-close" title="關閉">✕</button>
+    </div>
+  </div>
+  <div class="sch-page-body">
+    <div class="sch-page-left" id="sch-page-dates"></div>
+    <div class="sch-page-right" id="sch-page-right">
+      <div class="empty-state">
+        <div class="empty-icon">📅</div>
+        <p>點選左側日期查看或編輯排程</p>
+      </div>
     </div>
   </div>
 </div>
