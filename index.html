@@ -33,6 +33,7 @@
   </div>
 
   <div class="header-actions">
+    <button class="btn-secondary" id="crm-page-btn">📋 客戶總覽</button>
     <button class="btn-secondary" id="import-btn">📥 匯入 CSV</button>
     <button class="btn-secondary" id="export-btn">📤 匯出 CSV</button>
     <button class="btn-icon" id="settings-btn" title="設定">⚙️</button>
@@ -225,6 +226,31 @@
       <p class="settings-hint">距上次備註超過此天數，卡片顯示 ⚠️ 提醒</p>
     </div>
   </div>
+</div>
+
+<!-- ── CRM Full-Page Overview ────────────────────────────────────────────── -->
+<div id="crm-page" style="display:none">
+  <div class="crm-page-header">
+    <div class="crm-page-title">📋 客戶總覽</div>
+    <div class="crm-page-search">
+      <span class="search-icon">🔍</span>
+      <input type="text" id="crm-page-search" placeholder="搜尋公司名稱…" autocomplete="off">
+    </div>
+    <div class="crm-page-filters">
+      <button class="crm-pf-btn active" data-filter="all">全部</button>
+      <button class="crm-pf-btn" data-filter="undeveloped">🔴 未開發</button>
+      <button class="crm-pf-btn" data-filter="evaluating">🟡 評估中</button>
+      <button class="crm-pf-btn" data-filter="closed">🟢 已成交</button>
+    </div>
+    <div class="crm-page-actions">
+      <button class="btn-secondary" id="crm-page-import-btn">📥 匯入 CRM</button>
+      <button class="btn-secondary" id="crm-page-export-btn">📤 匯出 CSV</button>
+      <button class="btn-icon" id="crm-page-close" title="關閉">✕</button>
+    </div>
+    <input type="file" id="crm-page-file" accept=".csv" style="display:none">
+  </div>
+  <div class="crm-page-stats-bar" id="crm-page-stats"></div>
+  <div class="crm-page-body" id="crm-page-body"></div>
 </div>
 
 <!-- ── Scripts ───────────────────────────────────────────────────────────── -->

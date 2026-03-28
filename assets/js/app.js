@@ -24,6 +24,9 @@ const APP = {
   crmOverviewFilter: 'all',
   crmOverviewSearch: '',
   crmExpandedIds: new Set(),
+  crmPageFilter: 'all',
+  crmPageSearch: '',
+  crmPageExpandedIds: new Set(),
   pendingImportData: null,
 
   // ── Bootstrap ──────────────────────────────────────────────────────────
@@ -145,6 +148,7 @@ const APP = {
       card.querySelector('.btn-route-add')?.addEventListener('click', () => this.addToRoute(id));
       card.querySelector('.btn-route-remove')?.addEventListener('click', () => this.removeFromRoute(id));
       card.querySelector('.btn-status-cycle')?.addEventListener('click', () => this.cycleStatus(id));
+      card.querySelector('.btn-overview-toggle')?.addEventListener('click', () => this.addToOverview(id));
     });
   },
 
@@ -160,6 +164,10 @@ const APP = {
     const routeBtn  = inRoute
       ? `<button class="btn-sm btn-sm-danger btn-route-remove">✓ 已加入</button>`
       : `<button class="btn-sm btn-sm-primary btn-route-add">+ 行程</button>`;
+    const inOverview = !!(crm.inOverview || crm.status || (crm.notes && crm.notes.length > 0));
+    const overviewBtn = inOverview
+      ? `<button class="btn-overview in-overview btn-overview-toggle">✓ 總覽</button>`
+      : `<button class="btn-overview btn-overview-toggle">📋 加入總覽</button>`;
     const statusBtn = si
       ? `<button class="btn-status btn-status-set btn-status-cycle" style="border-color:${si.color};color:${si.color}">${si.icon} ${si.label}</button>`
       : `<button class="btn-status btn-status-unset btn-status-cycle">＋ 設狀態</button>`;
@@ -185,6 +193,7 @@ const APP = {
           ${statusBtn}
           <button class="btn-sm btn-sm-outline btn-detail">詳情</button>
           ${routeBtn}
+          ${overviewBtn}
         </div>
       </div>`;
   },
@@ -783,6 +792,7 @@ const APP = {
     if (id && this.route.some(r => r.id === id)) highlightRouteMarkers(this.route);
     this._updateCRMCount();
     if (document.getElementById('tab-crm')?.classList.contains('active')) this.renderCRMOverview();
+    if (document.getElementById('crm-page')?.style.display !== 'none') this.renderCRMPage();
   },
 
   _updateCRMCount() {
@@ -1021,6 +1031,291 @@ const APP = {
     }, { once: true });
   },
 
+  // ── CRM Full-Page Overview ─────────────────────────────────────────────
+  addToOverview(id) {
+    const c = this.getCompanyById(id);
+    if (!c) return;
+    const key = this.getCompanyKey(c);
+    if (!this.crm[key]) this.crm[key] = {};
+    if (this.crm[key].inOverview) {
+      this.openCRMPage();
+      return;
+    }
+    this.crm[key].inOverview = true;
+    this._saveCRM();
+    this.renderCompanyList();
+    this._updateCRMCount();
+    if (document.getElementById('crm-page').style.display !== 'none') this.renderCRMPage();
+    this.notify(`已加入總覽：${c.short_name || c.name}`, 'success');
+  },
+
+  removeFromOverview(id) {
+    const c = this.getCompanyById(id);
+    if (!c) return;
+    const key = this.getCompanyKey(c);
+    if (this.crm[key]) {
+      delete this.crm[key].inOverview;
+      if (!this.crm[key].status && !this.crm[key].notes?.length) delete this.crm[key];
+    }
+    this.crmPageExpandedIds.delete(id);
+    this._saveCRM();
+    this.renderCompanyList();
+    this._updateCRMCount();
+    this.renderCRMPage();
+    this.notify('已從總覽移除', 'info');
+  },
+
+  openCRMPage() {
+    document.getElementById('crm-page').style.display = 'flex';
+    this.renderCRMPage();
+  },
+
+  closeCRMPage() {
+    document.getElementById('crm-page').style.display = 'none';
+  },
+
+  getCRMPageCompanies() {
+    let list = this.companies.filter(c => {
+      const key = this.getCompanyKey(c);
+      const crm = this.crm[key];
+      const custom = this.customAddresses[key];
+      return crm?.inOverview || crm?.status || (crm?.notes?.length > 0) || custom;
+    });
+    const q = this.crmPageSearch.trim().toLowerCase();
+    if (q) list = list.filter(c =>
+      (c.name || '').toLowerCase().includes(q) ||
+      (c.short_name || '').toLowerCase().includes(q)
+    );
+    if (this.crmPageFilter !== 'all') {
+      list = list.filter(c => {
+        const crm = this.crm[this.getCompanyKey(c)];
+        return crm && crm.status === this.crmPageFilter;
+      });
+    }
+    list.sort((a, b) => {
+      const av = this.crm[this.getCompanyKey(a)]?.last_visit || '';
+      const bv = this.crm[this.getCompanyKey(b)]?.last_visit || '';
+      if (!av && !bv) return 0;
+      if (!av) return -1;
+      if (!bv) return 1;
+      return av.localeCompare(bv);
+    });
+    return list;
+  },
+
+  crmPageRowHtml(c) {
+    const key      = this.getCompanyKey(c);
+    const crm      = this.crm[key] || {};
+    const custom   = this.customAddresses[key];
+    const si       = crm.status ? STATUS_INFO[crm.status] : null;
+    const overdue  = this.isOverdueVisit(c);
+    const notes    = crm.notes || [];
+    const lastNote = notes[notes.length - 1];
+    const preview  = lastNote
+      ? lastNote.text.slice(0, 40) + (lastNote.text.length > 40 ? '…' : '')
+      : '';
+    const lastVisit = crm.last_visit ? crm.last_visit.slice(0, 10) : '–';
+    const expanded  = this.crmPageExpandedIds.has(c.id);
+    const inRoute   = this.route.some(r => r.id === c.id);
+    const customAddr = custom?.custom_address
+      ? `<span style="color:#2e7d32">✏️ ${custom.custom_address.slice(0, 18)}${custom.custom_address.length > 18 ? '…' : ''}</span>`
+      : `<span style="color:var(--text-light)">${(c.address || '').slice(0, 18)}${(c.address || '').length > 18 ? '…' : ''}</span>`;
+
+    const statusBtns = STATUS_LIST.map(s => {
+      const info   = STATUS_INFO[s];
+      const active = crm.status === s;
+      return `<button class="crm-sp${active ? ' active' : ''}"
+        data-action="status" data-id="${c.id}" data-status="${s}"
+        style="${active
+          ? `background:${info.color};border-color:${info.color};color:white`
+          : `border-color:${info.color};color:${info.color}`
+        }" title="${info.label}">${info.icon}</button>`;
+    }).join('') + (crm.status
+      ? `<button class="crm-sp crm-sp-clear" data-action="status" data-id="${c.id}" data-status="" title="清除狀態">✕</button>`
+      : '');
+
+    const notesHtml = notes.length
+      ? `<div class="crm-page-notes-list">${
+          notes.slice().reverse().map(n => `
+            <div class="note-item">
+              <span class="note-time">${n.time}</span>
+              <p class="note-text">${n.text.replace(/</g,'&lt;').replace(/\n/g,'<br>')}</p>
+            </div>`).join('')
+        }</div>`
+      : '<p class="no-notes">尚無備註</p>';
+
+    const rev = c.revenue_100m ? `${Number(c.revenue_100m).toLocaleString()} 億` : '–';
+    const emp = c.employees ? `${Number(c.employees).toLocaleString()} 人` : '–';
+
+    return `
+      <tr class="crm-tr${overdue ? ' crm-overdue' : ''}" data-id="${c.id}">
+        <td class="ctd-name">
+          <div class="ct-main-name">${c.short_name || c.name}${overdue ? ' <span title="超過提醒天數">⚠️</span>' : ''}</div>
+          ${c.short_name && c.name !== c.short_name ? `<div class="ct-sub-name">${c.name}</div>` : ''}
+        </td>
+        <td class="ctd-industry"><span class="tag industry" style="font-size:11px">${c.industry || '–'}</span></td>
+        <td class="ctd-city">${c.city || '–'}</td>
+        <td class="ctd-status"><div class="crm-sp-group">${statusBtns}</div></td>
+        <td class="ctd-visit">${lastVisit}</td>
+        <td class="ctd-notes">
+          ${preview ? `<div class="ct-note-preview" title="${lastNote.text.replace(/"/g,'&quot;')}">${preview}</div>` : '<span style="color:var(--text-light);font-size:12px">–</span>'}
+        </td>
+        <td class="ctd-addr">${customAddr}</td>
+        <td class="ctd-actions">
+          <div style="display:flex;gap:4px;flex-wrap:wrap">
+            <button class="btn-sm btn-sm-outline" data-action="detail" data-id="${c.id}">詳情</button>
+            <button class="btn-sm ${inRoute ? 'btn-sm-danger' : 'btn-sm-primary'}" data-action="route" data-id="${c.id}">${inRoute ? '✓行程' : '+行程'}</button>
+            <button class="btn-sm btn-sm-outline" data-action="expand" data-id="${c.id}">${expanded ? '▲' : '▼'} 備註${notes.length ? `(${notes.length})` : ''}</button>
+          </div>
+        </td>
+      </tr>
+      <tr class="crm-tr-detail" data-id="${c.id}" style="display:${expanded ? 'table-row' : 'none'}">
+        <td colspan="8">
+          <div class="crm-page-notes-section">
+            ${notesHtml}
+            <div class="crm-page-note-actions">
+              <textarea class="note-input crm-page-note-ta" data-id="${c.id}" rows="2" placeholder="新增備註…" style="flex:1;min-width:200px"></textarea>
+              <div style="display:flex;flex-direction:column;gap:4px">
+                <button class="btn-sm btn-sm-primary" data-action="note" data-id="${c.id}">📝 新增備註</button>
+                <button class="btn-sm" style="border-color:var(--danger);color:var(--danger);background:white" data-action="remove-overview" data-id="${c.id}">移出總覽</button>
+              </div>
+            </div>
+            <div style="margin-top:8px;font-size:12px;color:var(--text-light)">
+              💰 ${rev} &nbsp;|&nbsp; 👥 ${emp}${c.phone ? ` &nbsp;|&nbsp; 📞 ${c.phone}` : ''}${c.website ? ` &nbsp;|&nbsp; <a href="${c.website}" target="_blank" rel="noopener" style="color:var(--primary)">${c.website.replace(/^https?:\/\//,'')}</a>` : ''}
+            </div>
+          </div>
+        </td>
+      </tr>`;
+  },
+
+  renderCRMPage() {
+    const body = document.getElementById('crm-page-body');
+    if (!body) return;
+
+    // Sync filter buttons
+    document.querySelectorAll('.crm-pf-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.filter === this.crmPageFilter)
+    );
+
+    const allCRMCount = this.companies.filter(c => {
+      const key = this.getCompanyKey(c);
+      const crm = this.crm[key];
+      const custom = this.customAddresses[key];
+      return crm?.inOverview || crm?.status || (crm?.notes?.length > 0) || custom;
+    }).length;
+
+    const companies = this.getCRMPageCompanies();
+    const statsEl = document.getElementById('crm-page-stats');
+    if (statsEl) {
+      statsEl.textContent = `共 ${allCRMCount} 筆客戶記錄${companies.length < allCRMCount ? `，篩選後顯示 ${companies.length} 筆` : ''}`;
+    }
+
+    if (!companies.length) {
+      body.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><p>尚無客戶記錄<br>在搜尋結果點選「📋 加入總覽」或設定拜訪狀態</p></div>`;
+      return;
+    }
+
+    body.innerHTML = `
+      <table class="crm-table">
+        <thead>
+          <tr>
+            <th class="ctd-name">公司名稱</th>
+            <th class="ctd-industry">產業</th>
+            <th class="ctd-city">縣市</th>
+            <th class="ctd-status">狀態</th>
+            <th class="ctd-visit">最後拜訪</th>
+            <th class="ctd-notes">最新備註</th>
+            <th class="ctd-addr">地址</th>
+            <th class="ctd-actions">操作</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${companies.map(c => this.crmPageRowHtml(c)).join('')}
+        </tbody>
+      </table>`;
+
+    body.addEventListener('click', e => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      e.stopPropagation();
+      const id     = +btn.dataset.id;
+      const action = btn.dataset.action;
+      if (action === 'status') {
+        this.setStatus(id, btn.dataset.status || null);
+      } else if (action === 'route') {
+        this.addToRoute(id);
+        this.renderCRMPage();
+      } else if (action === 'detail') {
+        this.showDetail(id);
+      } else if (action === 'expand') {
+        if (this.crmPageExpandedIds.has(id)) this.crmPageExpandedIds.delete(id);
+        else this.crmPageExpandedIds.add(id);
+        this.renderCRMPage();
+      } else if (action === 'note') {
+        const ta = body.querySelector(`.crm-page-note-ta[data-id="${id}"]`);
+        if (ta) this.addNote(id, ta.value);
+      } else if (action === 'remove-overview') {
+        this.removeFromOverview(id);
+      }
+    }, { once: true });
+  },
+
+  // Import CRM data from CSV (matches by tax_id, updates status/notes/custom_address)
+  handleCRMFile(file) {
+    if (!file || !file.name.endsWith('.csv')) { this.notify('請選擇 CSV 檔案', 'error'); return; }
+    Papa.parse(file, {
+      header: true,
+      skipEmptyLines: true,
+      complete: result => this.importCRMCSV(result.data),
+      error: e => this.notify('CSV 解析失敗：' + e.message, 'error'),
+    });
+  },
+
+  importCRMCSV(rows) {
+    const STATUS_MAP = {
+      '未開發': 'undeveloped', '評估中': 'evaluating', '已成交': 'closed',
+      'undeveloped': 'undeveloped', 'evaluating': 'evaluating', 'closed': 'closed',
+    };
+    let matched = 0;
+    rows.forEach(r => {
+      const c = this.companies.find(co =>
+        (r.tax_id && co.tax_id === r.tax_id) ||
+        (r.name && (co.name === r.name || co.short_name === r.name))
+      );
+      if (!c) return;
+      matched++;
+      const key = this.getCompanyKey(c);
+      if (!this.crm[key]) this.crm[key] = {};
+      this.crm[key].inOverview = true;
+      if (r.status) {
+        const s = STATUS_MAP[r.status];
+        if (s) this.crm[key].status = s;
+      }
+      if (r.visit_notes && r.visit_notes.trim()) {
+        if (!this.crm[key].notes) this.crm[key].notes = [];
+        const now = new Date();
+        const time = `${now.getFullYear()}/${String(now.getMonth()+1).padStart(2,'0')}/${String(now.getDate()).padStart(2,'0')} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`;
+        this.crm[key].notes.push({ text: r.visit_notes, time });
+        this.crm[key].last_visit = time;
+      }
+      if (r.custom_address) {
+        if (!this.customAddresses[key]) this.customAddresses[key] = {};
+        this.customAddresses[key].custom_address = r.custom_address;
+        if (r.custom_lat && r.custom_lng) {
+          this.customAddresses[key].custom_lat  = parseFloat(r.custom_lat);
+          this.customAddresses[key].custom_lng  = parseFloat(r.custom_lng);
+          this.customAddresses[key].updated_at  = new Date().toISOString().slice(0, 10);
+        }
+      }
+    });
+    this._saveCRM();
+    this._saveCustomStore();
+    this.renderCompanyList();
+    this._updateCRMCount();
+    this.renderCRMPage();
+    this.notify(`CRM 匯入完成，更新 ${matched} 筆`, matched > 0 ? 'success' : 'info');
+  },
+
   notify(msg, type = 'info') {
     const el = document.createElement('div');
     el.className = `notification ${type}`;
@@ -1128,6 +1423,28 @@ const APP = {
       document.getElementById('settings-modal').style.display = 'none';
     });
     document.getElementById('reminder-days').addEventListener('change', () => this.saveSettings());
+
+    // CRM Full Page
+    document.getElementById('crm-page-btn').addEventListener('click', () => this.openCRMPage());
+    document.getElementById('crm-page-close').addEventListener('click', () => this.closeCRMPage());
+    document.getElementById('crm-page-search').addEventListener('input', e => {
+      this.crmPageSearch = e.target.value;
+      this.renderCRMPage();
+    });
+    document.querySelectorAll('.crm-pf-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.crmPageFilter = btn.dataset.filter;
+        this.renderCRMPage();
+      });
+    });
+    document.getElementById('crm-page-import-btn').addEventListener('click', () => {
+      document.getElementById('crm-page-file').click();
+    });
+    document.getElementById('crm-page-file').addEventListener('change', e => {
+      this.handleCRMFile(e.target.files[0]);
+      e.target.value = '';
+    });
+    document.getElementById('crm-page-export-btn').addEventListener('click', () => this.exportCSV());
 
     // Import / Export
     document.getElementById('import-btn').addEventListener('click', () => this.openImport());

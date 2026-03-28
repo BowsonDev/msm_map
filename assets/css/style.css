@@ -638,6 +638,122 @@ body {
 .custom-addr-note { font-size: 11px; color: #2e7d32; margin-top: 7px; }
 .card-custom-badge { font-size: 12px; }
 
+/* ── CRM Full-Page Overview ── */
+#crm-page {
+  position: fixed; inset: 0; z-index: 5000;
+  background: var(--bg);
+  display: flex; flex-direction: column;
+}
+
+.crm-page-header {
+  background: var(--white);
+  border-bottom: 2px solid var(--border);
+  padding: 10px 16px;
+  display: flex; align-items: center; gap: 12px;
+  flex-wrap: wrap; flex-shrink: 0;
+  box-shadow: 0 2px 8px rgba(0,0,0,.1);
+}
+.crm-page-title {
+  font-size: 18px; font-weight: 700; color: var(--primary);
+  white-space: nowrap; flex-shrink: 0;
+}
+.crm-page-search {
+  display: flex; align-items: center; gap: 6px;
+  flex: 1; min-width: 160px; max-width: 320px;
+  background: var(--bg); border: 1px solid var(--border);
+  border-radius: 20px; padding: 0 12px;
+}
+.crm-page-search:focus-within {
+  border-color: var(--primary); background: var(--white);
+}
+.crm-page-search input {
+  flex: 1; border: none; background: transparent;
+  padding: 7px 4px; font-size: 13px; outline: none;
+}
+.crm-page-filters { display: flex; gap: 5px; flex-shrink: 0; }
+.crm-pf-btn {
+  padding: 5px 12px; border-radius: 16px;
+  border: 1.5px solid var(--border); background: white;
+  cursor: pointer; font-size: 12px; font-weight: 600;
+  color: var(--text-light); transition: all .15s;
+  white-space: nowrap;
+}
+.crm-pf-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+.crm-pf-btn:hover:not(.active) { background: var(--bg); border-color: var(--primary); color: var(--primary); }
+
+.crm-page-actions { display: flex; gap: 8px; align-items: center; margin-left: auto; }
+
+.crm-page-stats-bar {
+  padding: 5px 16px; font-size: 12px; color: var(--text-light);
+  background: var(--white); border-bottom: 1px solid var(--border);
+  flex-shrink: 0;
+}
+.crm-page-body {
+  flex: 1; overflow-y: auto; padding: 12px 16px;
+}
+
+/* Table */
+.crm-table {
+  width: 100%; border-collapse: collapse;
+  background: white; border-radius: var(--radius);
+  box-shadow: var(--shadow); overflow: hidden;
+  table-layout: fixed;
+}
+.crm-table thead th {
+  padding: 10px 12px;
+  background: var(--bg); font-size: 11px; font-weight: 700;
+  color: var(--text-light); text-transform: uppercase; letter-spacing: .5px;
+  border-bottom: 2px solid var(--border); text-align: left;
+  position: sticky; top: 0; z-index: 10;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.crm-table td {
+  padding: 10px 12px; border-bottom: 1px solid var(--border);
+  vertical-align: middle; font-size: 13px;
+}
+.crm-tr:hover td { background: #f8f9fa; }
+.crm-tr.crm-overdue td:first-child { border-left: 3px solid #f9a825; }
+
+/* Column widths */
+.ctd-name   { width: 200px; }
+.ctd-industry { width: 130px; }
+.ctd-city   { width: 80px; }
+.ctd-status { width: 120px; }
+.ctd-visit  { width: 100px; white-space: nowrap; }
+.ctd-notes  { min-width: 160px; }
+.ctd-addr   { width: 140px; font-size: 12px; color: var(--text-light); }
+.ctd-actions { width: 150px; }
+
+.ct-main-name { font-weight: 600; font-size: 13px; }
+.ct-sub-name  { font-size: 11px; color: var(--text-light); margin-top: 2px; }
+.ct-note-preview {
+  font-size: 12px; color: var(--text);
+  overflow: hidden; text-overflow: ellipsis;
+  white-space: nowrap; max-width: 200px;
+}
+
+/* Detail row (expanded notes) */
+.crm-tr-detail td {
+  background: #fafbff; padding: 12px 16px;
+  border-bottom: 2px solid var(--border);
+}
+.crm-page-notes-section { max-width: 700px; }
+.crm-page-notes-list { max-height: 180px; overflow-y: auto; margin-bottom: 10px; }
+.crm-page-note-actions { display: flex; gap: 8px; align-items: flex-start; flex-wrap: wrap; }
+.crm-page-note-ta { flex: 1; min-width: 200px; }
+
+/* "加入總覽" button on card */
+.btn-overview {
+  font-size: 11px; padding: 3px 9px; border-radius: var(--radius);
+  border: 1px solid var(--primary); background: var(--primary-light);
+  color: var(--primary); cursor: pointer; font-weight: 500;
+  transition: all .15s; white-space: nowrap;
+}
+.btn-overview:hover { background: var(--primary); color: white; }
+.btn-overview.in-overview {
+  border-color: var(--success); background: #e6f4ea; color: var(--success);
+}
+
 /* Scrollbar */
 ::-webkit-scrollbar { width: 6px; }
 ::-webkit-scrollbar-track { background: transparent; }
