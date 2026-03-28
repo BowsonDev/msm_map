@@ -1851,10 +1851,6 @@ const APP = {
     // Schedule full page
     document.getElementById('schedule-page-btn').addEventListener('click', () => this.openSchedulePage());
     document.getElementById('sch-page-close').addEventListener('click', () => this.closeSchedulePage());
-    document.getElementById('sch-page-crm-btn').addEventListener('click', () => {
-      this.closeSchedulePage();
-      this.openCRMPage();
-    });
     document.getElementById('sch-page-today-btn').addEventListener('click', () => {
       const today = this._dateStr(new Date());
       if (this.schedule[today]?.length) {
@@ -1863,12 +1859,6 @@ const APP = {
       } else {
         this.notify('今日尚無排程', 'info');
       }
-    });
-
-    // CRM full page → open schedule
-    document.getElementById('crm-page-schedule-btn').addEventListener('click', () => {
-      this.closeCRMPage();
-      this.openSchedulePage();
     });
 
     // Schedule calendar navigation

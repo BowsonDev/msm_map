@@ -253,16 +253,15 @@
 
 <!-- ── Schedule Full-Page ────────────────────────────────────────────────── -->
 <div id="schedule-page" style="display:none">
-  <div class="sch-page-header">
-    <div class="sch-page-title">📅 拜訪排程</div>
-    <div class="sch-page-header-actions">
-      <button class="btn-secondary" id="sch-page-crm-btn">📋 客戶總覽</button>
-      <button class="btn-secondary" id="sch-page-today-btn">📌 跳至今日</button>
-      <button class="btn-icon" id="sch-page-close" title="關閉">✕</button>
-    </div>
-  </div>
+  <button class="page-float-close" id="sch-page-close" title="關閉">✕</button>
   <div class="sch-page-body">
-    <div class="sch-page-left" id="sch-page-dates"></div>
+    <div class="sch-page-left">
+      <div class="sch-left-top">
+        <span class="sch-left-top-title">📅 拜訪排程</span>
+        <button class="btn-sm btn-sm-outline" id="sch-page-today-btn">📌 今日</button>
+      </div>
+      <div id="sch-page-dates"></div>
+    </div>
     <div class="sch-page-right" id="sch-page-right">
       <div class="empty-state">
         <div class="empty-icon">📅</div>
@@ -274,8 +273,7 @@
 
 <!-- ── CRM Full-Page Overview ────────────────────────────────────────────── -->
 <div id="crm-page" style="display:none">
-  <div class="crm-page-header">
-    <div class="crm-page-title">📋 客戶總覽</div>
+  <div class="crm-page-toolbar">
     <div class="crm-page-search">
       <span class="search-icon">🔍</span>
       <input type="text" id="crm-page-search" placeholder="搜尋公司名稱…" autocomplete="off">
@@ -286,10 +284,9 @@
       <button class="crm-pf-btn" data-filter="evaluating">🟡 評估中</button>
       <button class="crm-pf-btn" data-filter="closed">🟢 已成交</button>
     </div>
-    <div class="crm-page-actions">
-      <button class="btn-secondary" id="crm-page-schedule-btn">📅 排程管理</button>
-      <button class="btn-secondary" id="crm-page-import-btn">📥 匯入 CRM</button>
-      <button class="btn-secondary" id="crm-page-export-btn">📤 匯出 CSV</button>
+    <div class="crm-toolbar-actions">
+      <button class="btn-secondary" id="crm-page-import-btn">📥 匯入</button>
+      <button class="btn-secondary" id="crm-page-export-btn">📤 匯出</button>
       <button class="btn-icon" id="crm-page-close" title="關閉">✕</button>
     </div>
     <input type="file" id="crm-page-file" accept=".csv" style="display:none">
