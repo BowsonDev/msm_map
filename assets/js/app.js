@@ -1623,6 +1623,16 @@ const APP = {
     this.notify(`已載入 ${companies.length} 家公司到今日行程`, 'success');
   },
 
+  // Save current route to today's schedule
+  saveRouteToSchedule() {
+    if (!this.route.length) { this.notify('今日行程為空', 'error'); return; }
+    const today = this._dateStr(new Date());
+    this.schedule[today] = this.route.map(c => c.id);
+    this._saveSchedule();
+    this._updateScheduleCount();
+    this.notify(`已儲存 ${this.route.length} 站到今日排程`, 'success');
+  },
+
   // ── Schedule Full-Page ─────────────────────────────────────────────────
   openSchedulePage(dateStr) {
     document.getElementById('schedule-page').style.display = 'flex';
@@ -1908,9 +1918,16 @@ const APP = {
     });
     document.getElementById('reminder-days').addEventListener('change', () => this.saveSettings());
 
+    // Route → save to schedule
+    document.getElementById('save-route-to-schedule-btn').addEventListener('click', () => this.saveRouteToSchedule());
+
     // Schedule full page
     document.getElementById('schedule-page-btn').addEventListener('click', () => this.openSchedulePage());
     document.getElementById('sch-page-close').addEventListener('click', () => this.closeSchedulePage());
+    document.getElementById('sch-page-crm-btn').addEventListener('click', () => {
+      this.closeSchedulePage();
+      this.openCRMPage();
+    });
     document.getElementById('sch-page-today-btn').addEventListener('click', () => {
       const today = this._dateStr(new Date());
       if (this.schedule[today]?.length) {
@@ -1919,6 +1936,12 @@ const APP = {
       } else {
         this.notify('今日尚無排程', 'info');
       }
+    });
+
+    // CRM full page → open schedule
+    document.getElementById('crm-page-schedule-btn').addEventListener('click', () => {
+      this.closeCRMPage();
+      this.openSchedulePage();
     });
 
     // Schedule calendar navigation
