@@ -27,6 +27,10 @@ const APP = {
   crmPageFilter: 'all',
   crmPageSearch: '',
   crmPageExpandedIds: new Set(),
+  schedule: {},           // YYYY-MM-DD → [companyId, ...]
+  scheduleSelectedDate: null,
+  scheduleViewYear: new Date().getFullYear(),
+  scheduleViewMonth: new Date().getMonth(),
   pendingImportData: null,
 
   // ── Bootstrap ──────────────────────────────────────────────────────────
@@ -35,11 +39,13 @@ const APP = {
     await this.loadData();
     this.loadCustomAddresses();
     this.loadCRM();
+    this.loadSchedule();
     this.loadSettings();
     this.buildFuse();
     this.renderTagFilters();
     this.applySearch();
     this._updateCRMCount();
+    this._updateScheduleCount();
     this.setupListeners();
   },
 
@@ -887,6 +893,7 @@ const APP = {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `tab-${tab}`));
     if (tab === 'crm') this.renderCRMOverview();
+    if (tab === 'schedule') this.renderScheduleTab();
   },
 
   // ── CRM Overview ───────────────────────────────────────────────────────
@@ -1316,6 +1323,294 @@ const APP = {
     this.notify(`CRM 匯入完成，更新 ${matched} 筆`, matched > 0 ? 'success' : 'info');
   },
 
+  // ── Schedule ───────────────────────────────────────────────────────────
+  loadSchedule() {
+    try {
+      const raw = localStorage.getItem('msm_map_schedule');
+      this.schedule = raw ? JSON.parse(raw) : {};
+    } catch (e) { this.schedule = {}; }
+    this._pruneSchedule();
+  },
+
+  _saveSchedule() {
+    localStorage.setItem('msm_map_schedule', JSON.stringify(this.schedule));
+  },
+
+  _pruneSchedule() {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    Object.keys(this.schedule).forEach(date => {
+      if (new Date(date) < today) delete this.schedule[date];
+    });
+  },
+
+  _updateScheduleCount() {
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const n = Object.keys(this.schedule).filter(d =>
+      new Date(d) >= today && (this.schedule[d] || []).length > 0
+    ).length;
+    const el = document.getElementById('schedule-count');
+    if (el) el.textContent = n;
+  },
+
+  // ── Calendar Render ────────────────────────────────────────────────────
+  renderScheduleTab() {
+    this.renderCalendar();
+    const panel = document.getElementById('cal-day-panel');
+    if (this.scheduleSelectedDate) {
+      this.renderDayDetail(this.scheduleSelectedDate);
+    } else if (panel) {
+      panel.style.display = 'none';
+    }
+  },
+
+  renderCalendar() {
+    const year  = this.scheduleViewYear;
+    const month = this.scheduleViewMonth;
+    const today = new Date(); today.setHours(0, 0, 0, 0);
+    const todayStr = this._dateStr(today);
+    const maxDate  = new Date(today); maxDate.setDate(maxDate.getDate() + 90);
+
+    const titleEl = document.getElementById('cal-title');
+    if (titleEl) titleEl.textContent = `${year}年${month + 1}月`;
+
+    const firstDow  = new Date(year, month, 1).getDay(); // 0=Sun
+    const daysInMonth = new Date(year, month + 1, 0).getDate();
+    const prevMonthDays = new Date(year, month, 0).getDate();
+
+    let html = '';
+
+    // Leading cells from previous month
+    for (let i = firstDow - 1; i >= 0; i--) {
+      html += `<div class="cal-cell other-month"><span class="cal-day-num">${prevMonthDays - i}</span></div>`;
+    }
+
+    // Days of current month
+    for (let d = 1; d <= daysInMonth; d++) {
+      const date    = new Date(year, month, d);
+      const dateStr = this._dateStr(date);
+      const isToday    = dateStr === todayStr;
+      const isPast     = date < today;
+      const isDisabled = date > maxDate;
+      const isSelected = dateStr === this.scheduleSelectedDate;
+      const ids  = this.schedule[dateStr] || [];
+      const cnt  = ids.length;
+
+      const classes = ['cal-cell',
+        isToday    ? 'today'        : '',
+        isPast     ? 'past'         : '',
+        isDisabled ? 'cal-disabled' : '',
+        isSelected ? 'cal-selected' : '',
+        cnt        ? 'has-schedule' : '',
+      ].filter(Boolean).join(' ');
+
+      const dot = cnt
+        ? `<div class="cal-dot-row"><span class="cal-dot"></span><span class="cal-sch-count">${cnt}</span></div>`
+        : '';
+
+      html += `<div class="${classes}" data-date="${dateStr}">
+        <span class="cal-day-num">${d}</span>${dot}
+      </div>`;
+    }
+
+    // Trailing cells
+    const totalCells = firstDow + daysInMonth;
+    const trailing   = (7 - totalCells % 7) % 7;
+    for (let i = 1; i <= trailing; i++) {
+      html += `<div class="cal-cell other-month"><span class="cal-day-num">${i}</span></div>`;
+    }
+
+    const grid = document.getElementById('cal-grid');
+    if (!grid) return;
+    grid.innerHTML = html;
+
+    // Click handlers – only clickable (non-past, non-disabled, non-other-month) cells
+    grid.querySelectorAll('.cal-cell[data-date]').forEach(cell => {
+      if (cell.classList.contains('past') || cell.classList.contains('cal-disabled')) return;
+      cell.addEventListener('click', () => {
+        this.scheduleSelectedDate = cell.dataset.date;
+        this.renderCalendar();
+        this.renderDayDetail(cell.dataset.date);
+      });
+    });
+  },
+
+  _dateStr(date) {
+    return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, '0')}-${String(date.getDate()).padStart(2, '0')}`;
+  },
+
+  // ── Day Detail Panel ───────────────────────────────────────────────────
+  renderDayDetail(dateStr) {
+    const panel = document.getElementById('cal-day-panel');
+    if (!panel) return;
+    panel.style.display = 'block';
+
+    const ids       = this.schedule[dateStr] || [];
+    const companies = ids.map(id => this.getCompanyById(id)).filter(Boolean);
+    const date      = new Date(dateStr + 'T00:00:00');
+    const dow       = ['日','一','二','三','四','五','六'][date.getDay()];
+    const title     = `${date.getMonth() + 1}月${date.getDate()}日（週${dow}）`;
+    const today     = this._dateStr(new Date());
+    const isToday   = dateStr === today;
+
+    // Scheduled list
+    const schedHtml = companies.length
+      ? companies.map((c, i) => `
+          <div class="sch-item" data-idx="${i}">
+            <span class="sch-num">${i + 1}</span>
+            <div class="sch-info">
+              <div class="sch-name">${c.short_name || c.name}</div>
+              <div class="sch-city">${c.city || ''}${c.industry ? ' · ' + c.industry : ''}</div>
+            </div>
+            <div class="sch-btns">
+              <button class="btn-icon sch-btn" data-action="up"     data-idx="${i}" ${i === 0 ? 'disabled' : ''} title="上移">↑</button>
+              <button class="btn-icon sch-btn" data-action="down"   data-idx="${i}" ${i === companies.length - 1 ? 'disabled' : ''} title="下移">↓</button>
+              <button class="btn-icon sch-btn" data-action="remove" data-idx="${i}" title="移除">×</button>
+            </div>
+          </div>`).join('')
+      : '<p style="color:var(--text-light);font-size:12px;padding:8px 4px">尚無排程，從下方加入客戶</p>';
+
+    // Picker: CRM companies not already in this day's schedule
+    const crmCompanies = this.companies.filter(c => {
+      const key = this.getCompanyKey(c);
+      const crm = this.crm[key];
+      const custom = this.customAddresses[key];
+      return (crm?.inOverview || crm?.status || (crm?.notes?.length > 0) || custom) && !ids.includes(c.id);
+    });
+
+    const pickerHtml = crmCompanies.length
+      ? crmCompanies.map(c => {
+          const si = this.crm[this.getCompanyKey(c)]?.status
+            ? STATUS_INFO[this.crm[this.getCompanyKey(c)].status] : null;
+          return `<div class="cdd-pick-item" data-id="${c.id}">
+            <span>${si ? si.icon : '⬜'}</span>
+            <span class="cdd-pick-name">${c.short_name || c.name}</span>
+            <span class="cdd-pick-city">${c.city || ''}</span>
+            <button class="btn-sm btn-sm-primary" data-action="add" data-id="${c.id}" style="flex-shrink:0">＋</button>
+          </div>`;
+        }).join('')
+      : '<p style="color:var(--text-light);font-size:12px;padding:6px 4px">無可加入的客戶（請先在搜尋結果點選「加入總覽」）</p>';
+
+    panel.innerHTML = `
+      <div class="cdd-header">
+        <span class="cdd-title">📅 ${title}</span>
+        <div class="cdd-header-actions">
+          ${companies.length > 1 ? `<button class="btn-sm btn-sm-outline" data-action="auto-sort">🔀 自動排序</button>` : ''}
+          ${companies.length ? `<button class="btn-sm btn-sm-primary" data-action="load-route">🚗 ${isToday ? '載入今日行程' : '載入為行程'}</button>` : ''}
+        </div>
+      </div>
+      <div class="cdd-sched-list">${schedHtml}</div>
+      <div class="cdd-add-section">
+        <div class="cdd-add-title">從客戶總覽加入</div>
+        <input type="text" class="crm-search-input cdd-pick-search" placeholder="搜尋客戶名稱…" style="margin-bottom:0">
+        <div class="cdd-pick-list" id="cdd-pick-list-${dateStr}">${pickerHtml}</div>
+      </div>`;
+
+    // Picker search filter (DOM-level, no re-render)
+    panel.querySelector('.cdd-pick-search')?.addEventListener('input', e => {
+      const q = e.target.value.trim().toLowerCase();
+      panel.querySelectorAll('.cdd-pick-item').forEach(item => {
+        const name = item.querySelector('.cdd-pick-name')?.textContent.toLowerCase() || '';
+        item.style.display = (!q || name.includes(q)) ? '' : 'none';
+      });
+    });
+
+    // All action buttons via delegation
+    panel.addEventListener('click', e => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      e.stopPropagation();
+      const action = btn.dataset.action;
+      if (action === 'auto-sort')  { this.autoSortScheduleDay(dateStr); }
+      else if (action === 'load-route') { this.loadScheduleToRoute(dateStr); }
+      else if (action === 'up')    { this.moveScheduleItem(dateStr, +btn.dataset.idx, -1); }
+      else if (action === 'down')  { this.moveScheduleItem(dateStr, +btn.dataset.idx,  1); }
+      else if (action === 'remove'){ this.removeFromSchedule(dateStr, +btn.dataset.idx); }
+      else if (action === 'add')   { this.addToSchedule(dateStr, +btn.dataset.id); }
+    }, { once: true });
+  },
+
+  // ── Schedule Actions ───────────────────────────────────────────────────
+  addToSchedule(dateStr, companyId) {
+    if (!this.schedule[dateStr]) this.schedule[dateStr] = [];
+    if (this.schedule[dateStr].includes(companyId)) return;
+    this.schedule[dateStr].push(companyId);
+    this._sortScheduleDay(dateStr);  // auto-sort after add
+    this._saveSchedule();
+    this._updateScheduleCount();
+    this.renderCalendar();
+    this.renderDayDetail(dateStr);
+    const c = this.getCompanyById(companyId);
+    if (c) this.notify(`已加入排程：${c.short_name || c.name}`, 'success');
+  },
+
+  removeFromSchedule(dateStr, idx) {
+    if (!this.schedule[dateStr]) return;
+    this.schedule[dateStr].splice(idx, 1);
+    if (!this.schedule[dateStr].length) delete this.schedule[dateStr];
+    this._saveSchedule();
+    this._updateScheduleCount();
+    this.renderCalendar();
+    this.renderDayDetail(dateStr);
+  },
+
+  moveScheduleItem(dateStr, idx, dir) {
+    const arr = this.schedule[dateStr];
+    if (!arr) return;
+    const newIdx = idx + dir;
+    if (newIdx < 0 || newIdx >= arr.length) return;
+    [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]];
+    this._saveSchedule();
+    this.renderDayDetail(dateStr);
+  },
+
+  // Internal nearest-neighbor sort for a schedule day (no side effects)
+  _sortScheduleDay(dateStr) {
+    const ids = this.schedule[dateStr] || [];
+    if (ids.length <= 1) return;
+    const all      = ids.map(id => this.getCompanyById(id)).filter(Boolean);
+    const withCoord    = all.filter(c => { const p = this.getCompanyCoords(c); return p.lat && p.lng; });
+    const withoutCoord = all.filter(c => { const p = this.getCompanyCoords(c); return !p.lat || !p.lng; });
+    if (withCoord.length <= 1) return;
+
+    const origin = this.startLocation || { lat: 23.8, lng: 121.0 };
+    const remaining = [...withCoord];
+    const sorted = [];
+    let cur = origin;
+    while (remaining.length > 0) {
+      let ni = 0, nd = Infinity;
+      remaining.forEach((stop, i) => {
+        const d = haversine(cur, this.getCompanyCoords(stop));
+        if (d < nd) { nd = d; ni = i; }
+      });
+      sorted.push(remaining[ni]);
+      cur = this.getCompanyCoords(remaining[ni]);
+      remaining.splice(ni, 1);
+    }
+    this.schedule[dateStr] = [...sorted, ...withoutCoord].map(c => c.id);
+  },
+
+  autoSortScheduleDay(dateStr) {
+    this._sortScheduleDay(dateStr);
+    this._saveSchedule();
+    this.renderCalendar();
+    this.renderDayDetail(dateStr);
+    this.notify('已依距離自動排序', 'success');
+  },
+
+  loadScheduleToRoute(dateStr) {
+    const ids       = this.schedule[dateStr] || [];
+    const companies = ids.map(id => this.getCompanyById(id)).filter(Boolean);
+    if (!companies.length) { this.notify('此日無排程', 'info'); return; }
+    this.clearRoute();
+    this.autoSort = false;  // preserve schedule order
+    companies.forEach(c => this.route.push(c));
+    this.renderRoute();
+    this.renderCompanyList();
+    this.switchTab('route');
+    highlightRouteMarkers(this.route);
+    this.notify(`已載入 ${companies.length} 家公司到今日行程`, 'success');
+  },
+
   notify(msg, type = 'info') {
     const el = document.createElement('div');
     el.className = `notification ${type}`;
@@ -1423,6 +1718,18 @@ const APP = {
       document.getElementById('settings-modal').style.display = 'none';
     });
     document.getElementById('reminder-days').addEventListener('change', () => this.saveSettings());
+
+    // Schedule calendar navigation
+    document.getElementById('cal-prev').addEventListener('click', () => {
+      this.scheduleViewMonth--;
+      if (this.scheduleViewMonth < 0) { this.scheduleViewMonth = 11; this.scheduleViewYear--; }
+      this.renderCalendar();
+    });
+    document.getElementById('cal-next').addEventListener('click', () => {
+      this.scheduleViewMonth++;
+      if (this.scheduleViewMonth > 11) { this.scheduleViewMonth = 0; this.scheduleViewYear++; }
+      this.renderCalendar();
+    });
 
     // CRM Full Page
     document.getElementById('crm-page-btn').addEventListener('click', () => this.openCRMPage());
