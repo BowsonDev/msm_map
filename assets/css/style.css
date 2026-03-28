@@ -468,6 +468,71 @@ body {
 .popup-btn-route { background: var(--primary); color: white; border-color: var(--primary); }
 .popup-btn-route:hover { background: var(--primary-dark); }
 
+/* ── CRM Overview tab ── */
+.crm-toolbar {
+  padding: 8px 8px 4px; display: flex; flex-direction: column; gap: 6px;
+  border-bottom: 1px solid var(--border);
+}
+.crm-search-input {
+  width: 100%; box-sizing: border-box; padding: 7px 10px;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  font-size: 13px; outline: none;
+}
+.crm-search-input:focus { border-color: var(--primary); }
+.crm-filter-tabs { display: flex; gap: 4px; }
+.crm-filter-btn {
+  flex: 1; padding: 4px 6px; font-size: 12px; font-weight: 600;
+  border: 1px solid var(--border); border-radius: var(--radius);
+  background: white; cursor: pointer; transition: all .15s;
+  color: var(--text-light);
+}
+.crm-filter-btn.active { background: var(--primary); color: white; border-color: var(--primary); }
+.crm-filter-btn:hover:not(.active) { background: var(--bg); }
+
+.crm-row {
+  padding: 10px 10px 8px; border-bottom: 1px solid var(--border);
+  background: white; transition: background .15s;
+}
+.crm-row:hover { background: #fafafa; }
+.crm-row.crm-overdue { border-left: 3px solid #f9a825; }
+.crm-row.crm-expanded { background: var(--bg); }
+
+.crm-row-top {
+  display: flex; align-items: center; gap: 5px; margin-bottom: 3px;
+}
+.crm-status-icon { font-size: 14px; flex-shrink: 0; }
+.crm-row-name { font-size: 13px; font-weight: 600; flex: 1; min-width: 0;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.crm-row-city { font-size: 11px; color: var(--text-light); flex-shrink: 0; }
+.crm-warn { font-size: 13px; flex-shrink: 0; }
+
+.crm-row-meta {
+  display: flex; gap: 8px; font-size: 11px; color: var(--text-light);
+  margin-bottom: 7px; align-items: baseline; flex-wrap: wrap;
+}
+.crm-preview {
+  flex: 1; min-width: 0; overflow: hidden;
+  text-overflow: ellipsis; white-space: nowrap; color: var(--text);
+}
+
+.crm-row-actions { display: flex; gap: 5px; align-items: center; }
+.crm-sp-group { display: flex; gap: 3px; }
+.crm-sp {
+  width: 26px; height: 22px; border-radius: 5px; border: 1.5px solid;
+  cursor: pointer; font-size: 13px; display: flex; align-items: center;
+  justify-content: center; padding: 0; transition: opacity .15s; background: white;
+}
+.crm-sp:hover { opacity: .75; }
+.crm-sp-clear { border-color: var(--border) !important; color: var(--text-light) !important;
+  font-size: 11px !important; }
+.crm-btn-route, .crm-btn-expand { flex-shrink: 0; }
+
+.crm-row-notes {
+  margin-top: 8px; padding-top: 8px;
+  border-top: 1px dashed var(--border);
+}
+.crm-add-note-row { margin-top: 8px; }
+
 /* ── CRM: status button on card ── */
 .btn-status {
   font-size: 11px; padding: 2px 8px; border-radius: 10px;

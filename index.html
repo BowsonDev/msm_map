@@ -72,6 +72,10 @@
         今日行程
         <span class="count-badge" id="route-count">0</span>
       </button>
+      <button class="tab-btn" data-tab="crm">
+        客戶總覽
+        <span class="count-badge" id="crm-count">0</span>
+      </button>
     </div>
 
     <!-- Search results tab -->
@@ -135,6 +139,20 @@
         <p class="summary-note" id="route-source-note"></p>
         <button class="btn-secondary btn-full" id="open-gmaps">🗺 在 Google Maps 開啟路線</button>
       </div>
+    </div>
+
+    <!-- CRM overview tab -->
+    <div class="tab-content" id="tab-crm">
+      <div class="crm-toolbar">
+        <input type="text" id="crm-search" placeholder="搜尋客戶名稱…" class="crm-search-input">
+        <div class="crm-filter-tabs">
+          <button class="crm-filter-btn active" data-filter="all">全部</button>
+          <button class="crm-filter-btn" data-filter="undeveloped">🔴</button>
+          <button class="crm-filter-btn" data-filter="evaluating">🟡</button>
+          <button class="crm-filter-btn" data-filter="closed">🟢</button>
+        </div>
+      </div>
+      <div id="crm-list"></div>
     </div>
 
   </div><!-- /sidebar -->
