@@ -21,6 +21,9 @@ const APP = {
   customAddresses: {},   // key → { custom_address, custom_lat, custom_lng, updated_at }
   crm: {},               // key → { status, notes:[{text,time}], last_visit }
   settings: { reminderDays: 30 },
+  crmOverviewFilter: 'all',
+  crmOverviewSearch: '',
+  crmExpandedIds: new Set(),
   pendingImportData: null,
 
   // ── Bootstrap ──────────────────────────────────────────────────────────
@@ -33,6 +36,7 @@ const APP = {
     this.buildFuse();
     this.renderTagFilters();
     this.applySearch();
+    this._updateCRMCount();
     this.setupListeners();
   },
 
@@ -756,9 +760,7 @@ const APP = {
     const idx = STATUS_LIST.indexOf(cur);
     this.crm[key].status = STATUS_LIST[(idx + 1) % STATUS_LIST.length];
     this._saveCRM();
-    this.renderCompanyList();
-    refreshMarkers(this.filtered);
-    if (this.route.some(r => r.id === id)) highlightRouteMarkers(this.route);
+    this._refreshCRMViews(id);
   },
 
   setStatus(id, status) {
@@ -769,17 +771,35 @@ const APP = {
     if (status) this.crm[key].status = status;
     else delete this.crm[key].status;
     this._saveCRM();
-    this.showDetail(id);
-    this.renderCompanyList();
-    refreshMarkers(this.filtered);
-    if (this.route.some(r => r.id === id)) highlightRouteMarkers(this.route);
+    this._refreshCRMViews(id);
   },
 
-  addNote(id) {
+  // Re-render all views that show CRM data
+  _refreshCRMViews(id) {
+    const c = id ? this.getCompanyById(id) : null;
+    if (id && document.getElementById('detail-modal').style.display !== 'none') this.showDetail(id);
+    this.renderCompanyList();
+    refreshMarkers(this.filtered);
+    if (id && this.route.some(r => r.id === id)) highlightRouteMarkers(this.route);
+    this._updateCRMCount();
+    if (document.getElementById('tab-crm')?.classList.contains('active')) this.renderCRMOverview();
+  },
+
+  _updateCRMCount() {
+    const n = this.companies.filter(c => {
+      const key = this.getCompanyKey(c);
+      return this.crm[key] || this.customAddresses[key];
+    }).length;
+    const el = document.getElementById('crm-count');
+    if (el) el.textContent = n;
+  },
+
+  addNote(id, textOverride) {
     const c    = this.getCompanyById(id);
     if (!c) return;
-    const ta   = document.getElementById('note-input');
-    const text = (ta && ta.value || '').trim();
+    const ta   = textOverride == null ? document.getElementById('note-input') : null;
+    const text = textOverride != null ? textOverride.trim()
+                                      : (ta && ta.value || '').trim();
     if (!text) { this.notify('請輸入備註內容', 'error'); return; }
     const key  = this.getCompanyKey(c);
     if (!this.crm[key]) this.crm[key] = {};
@@ -790,8 +810,7 @@ const APP = {
     this.crm[key].last_visit = time;
     this._saveCRM();
     this.notify('備註已儲存', 'success');
-    this.showDetail(id);
-    this.renderCompanyList(); // refresh ⚠️ badges
+    this._refreshCRMViews(id);
   },
 
   // Returns true if last note older than reminderDays
@@ -857,6 +876,149 @@ const APP = {
   switchTab(tab) {
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.toggle('active', b.dataset.tab === tab));
     document.querySelectorAll('.tab-content').forEach(c => c.classList.toggle('active', c.id === `tab-${tab}`));
+    if (tab === 'crm') this.renderCRMOverview();
+  },
+
+  // ── CRM Overview ───────────────────────────────────────────────────────
+  getCRMCompanies() {
+    // Companies that have any CRM data or custom address
+    let list = this.companies.filter(c => {
+      const key = this.getCompanyKey(c);
+      return this.crm[key] || this.customAddresses[key];
+    });
+
+    // Search filter
+    const q = this.crmOverviewSearch.trim().toLowerCase();
+    if (q) list = list.filter(c =>
+      (c.name || '').toLowerCase().includes(q) ||
+      (c.short_name || '').toLowerCase().includes(q)
+    );
+
+    // Status filter
+    if (this.crmOverviewFilter !== 'all') {
+      list = list.filter(c => {
+        const crm = this.crm[this.getCompanyKey(c)];
+        return crm && crm.status === this.crmOverviewFilter;
+      });
+    }
+
+    // Sort: never visited first, then oldest last_visit first
+    list.sort((a, b) => {
+      const av = this.crm[this.getCompanyKey(a)]?.last_visit || '';
+      const bv = this.crm[this.getCompanyKey(b)]?.last_visit || '';
+      if (!av && !bv) return 0;
+      if (!av) return -1;
+      if (!bv) return 1;
+      return av.localeCompare(bv);
+    });
+    return list;
+  },
+
+  crmRowHtml(c) {
+    const key      = this.getCompanyKey(c);
+    const crm      = this.crm[key] || {};
+    const si       = crm.status ? STATUS_INFO[crm.status] : null;
+    const overdue  = this.isOverdueVisit(c);
+    const notes    = crm.notes || [];
+    const lastNote = notes[notes.length - 1];
+    const preview  = lastNote
+      ? lastNote.text.slice(0, 30) + (lastNote.text.length > 30 ? '…' : '')
+      : '';
+    const lastVisit = crm.last_visit ? crm.last_visit.slice(0, 10) : '–';
+    const expanded  = this.crmExpandedIds.has(c.id);
+    const inRoute   = this.route.some(r => r.id === c.id);
+
+    const statusBtns = STATUS_LIST.map(s => {
+      const info   = STATUS_INFO[s];
+      const active = crm.status === s;
+      return `<button class="crm-sp${active ? ' active' : ''}"
+        data-action="status" data-id="${c.id}" data-status="${s}"
+        style="${active
+          ? `background:${info.color};border-color:${info.color};color:white`
+          : `border-color:${info.color};color:${info.color}`
+        }" title="${info.label}">${info.icon}</button>`;
+    }).join('') + (crm.status
+      ? `<button class="crm-sp crm-sp-clear" data-action="status" data-id="${c.id}" data-status="" title="清除狀態">✕</button>`
+      : '');
+
+    const notesHtml = notes.length
+      ? notes.slice().reverse().map(n => `
+          <div class="note-item">
+            <span class="note-time">${n.time}</span>
+            <p class="note-text">${n.text.replace(/</g,'&lt;').replace(/\n/g,'<br>')}</p>
+          </div>`).join('')
+      : '<p class="no-notes">尚無備註</p>';
+
+    return `
+      <div class="crm-row${overdue ? ' crm-overdue' : ''}${expanded ? ' crm-expanded' : ''}" data-id="${c.id}">
+        <div class="crm-row-top">
+          <span class="crm-status-icon">${si ? `<span style="color:${si.color}">${si.icon}</span>` : '⬜'}</span>
+          <span class="crm-row-name">${c.short_name || c.name}</span>
+          <span class="crm-row-city">${c.city || ''}</span>
+          ${overdue ? '<span class="crm-warn" title="超過提醒天數未拜訪">⚠️</span>' : ''}
+        </div>
+        <div class="crm-row-meta">
+          <span>📅 ${lastVisit}</span>
+          ${preview ? `<span class="crm-preview" title="${lastNote.text.replace(/"/g,'&quot;')}">${preview}</span>` : ''}
+        </div>
+        <div class="crm-row-actions">
+          <div class="crm-sp-group">${statusBtns}</div>
+          <button class="btn-sm ${inRoute ? 'btn-sm-danger' : 'btn-sm-primary'} crm-btn-route"
+                  data-action="route" data-id="${c.id}">${inRoute ? '✓ 行程' : '+ 行程'}</button>
+          <button class="btn-sm btn-sm-outline crm-btn-expand"
+                  data-action="expand" data-id="${c.id}">${expanded ? '▲' : '▼'} 備註${notes.length ? `(${notes.length})` : ''}</button>
+        </div>
+        <div class="crm-row-notes" style="display:${expanded ? 'block' : 'none'}">
+          ${notesHtml}
+          <div class="crm-add-note-row">
+            <textarea class="note-input crm-note-ta" data-id="${c.id}" rows="2" placeholder="新增備註…"></textarea>
+            <button class="btn-sm btn-sm-primary crm-btn-note" data-action="note" data-id="${c.id}" style="margin-top:4px;width:100%">📝 新增備註</button>
+          </div>
+        </div>
+      </div>`;
+  },
+
+  renderCRMOverview() {
+    const el = document.getElementById('crm-list');
+    if (!el) return;
+
+    // Sync filter button states
+    document.querySelectorAll('.crm-filter-btn').forEach(b =>
+      b.classList.toggle('active', b.dataset.filter === this.crmOverviewFilter)
+    );
+
+    const companies = this.getCRMCompanies();
+    this._updateCRMCount();
+
+    if (!companies.length) {
+      el.innerHTML = `<div class="empty-state"><div class="empty-icon">📋</div><p>尚無客戶記錄<br>在公司詳情設定狀態或新增備註後<br>會出現在此</p></div>`;
+      return;
+    }
+
+    el.innerHTML = companies.map(c => this.crmRowHtml(c)).join('');
+
+    // Single delegated listener
+    el.addEventListener('click', e => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      e.stopPropagation();
+      const id     = +btn.dataset.id;
+      const action = btn.dataset.action;
+
+      if (action === 'status') {
+        this.setStatus(id, btn.dataset.status || null);
+      } else if (action === 'route') {
+        this.addToRoute(id);
+        this.renderCRMOverview();
+      } else if (action === 'expand') {
+        if (this.crmExpandedIds.has(id)) this.crmExpandedIds.delete(id);
+        else this.crmExpandedIds.add(id);
+        this.renderCRMOverview();
+      } else if (action === 'note') {
+        const ta = el.querySelector(`.crm-note-ta[data-id="${id}"]`);
+        if (ta) this.addNote(id, ta.value);
+      }
+    }, { once: true });
   },
 
   notify(msg, type = 'info') {
@@ -895,6 +1057,18 @@ const APP = {
     // Tabs
     document.querySelectorAll('.tab-btn').forEach(btn => {
       btn.addEventListener('click', () => this.switchTab(btn.dataset.tab));
+    });
+
+    // CRM overview: search + filter
+    document.getElementById('crm-search').addEventListener('input', e => {
+      this.crmOverviewSearch = e.target.value;
+      this.renderCRMOverview();
+    });
+    document.querySelectorAll('.crm-filter-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        this.crmOverviewFilter = btn.dataset.filter;
+        this.renderCRMOverview();
+      });
     });
 
     // Route controls
