@@ -175,8 +175,8 @@ const APP = {
       ? `<button class="btn-overview in-overview btn-overview-toggle">✓ 總覽</button>`
       : `<button class="btn-overview btn-overview-toggle">📋 加入總覽</button>`;
     const statusBtn = si
-      ? `<button class="btn-status btn-status-set btn-status-cycle" style="border-color:${si.color};color:${si.color}">${si.icon} ${si.label}</button>`
-      : `<button class="btn-status btn-status-unset btn-status-cycle">＋ 設狀態</button>`;
+      ? `<button class="btn-status btn-status-set btn-status-cycle" style="border-color:${si.color};color:${si.color}" title="${crm.status === STATUS_LIST[STATUS_LIST.length-1] ? '再按一次可清除狀態' : '點擊切換下一個狀態'}">${si.icon} ${si.label}</button>`
+      : `<button class="btn-status btn-status-unset btn-status-cycle" title="點擊設定拜訪狀態">＋ 設狀態</button>`;
     return `
       <div class="company-card${inRoute ? ' in-route' : ''}" data-id="${c.id}">
         <div class="card-header">
@@ -773,7 +773,12 @@ const APP = {
     if (!this.crm[key]) this.crm[key] = {};
     const cur = this.crm[key].status;
     const idx = STATUS_LIST.indexOf(cur);
-    this.crm[key].status = STATUS_LIST[(idx + 1) % STATUS_LIST.length];
+    if (idx === STATUS_LIST.length - 1) {
+      // Last status → clear
+      delete this.crm[key].status;
+    } else {
+      this.crm[key].status = STATUS_LIST[idx + 1];
+    }
     this._saveCRM();
     this._refreshCRMViews(id);
   },
