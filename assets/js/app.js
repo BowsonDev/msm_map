@@ -1535,15 +1535,21 @@ const APP = {
   },
 
   // ── Schedule Actions ───────────────────────────────────────────────────
+  // Centralised re-render for all schedule views
+  _refreshScheduleViews(dateStr) {
+    this._updateScheduleCount();
+    this.renderCalendar();
+    if (this.scheduleSelectedDate === dateStr) this.renderDayDetail(dateStr);
+    if (document.getElementById('schedule-page')?.style.display !== 'none') this.renderSchedulePage();
+  },
+
   addToSchedule(dateStr, companyId) {
     if (!this.schedule[dateStr]) this.schedule[dateStr] = [];
     if (this.schedule[dateStr].includes(companyId)) return;
     this.schedule[dateStr].push(companyId);
-    this._sortScheduleDay(dateStr);  // auto-sort after add
+    this._sortScheduleDay(dateStr);
     this._saveSchedule();
-    this._updateScheduleCount();
-    this.renderCalendar();
-    this.renderDayDetail(dateStr);
+    this._refreshScheduleViews(dateStr);
     const c = this.getCompanyById(companyId);
     if (c) this.notify(`已加入排程：${c.short_name || c.name}`, 'success');
   },
@@ -1551,11 +1557,12 @@ const APP = {
   removeFromSchedule(dateStr, idx) {
     if (!this.schedule[dateStr]) return;
     this.schedule[dateStr].splice(idx, 1);
-    if (!this.schedule[dateStr].length) delete this.schedule[dateStr];
+    if (!this.schedule[dateStr].length) {
+      delete this.schedule[dateStr];
+      if (this.scheduleSelectedDate === dateStr) this.scheduleSelectedDate = null;
+    }
     this._saveSchedule();
-    this._updateScheduleCount();
-    this.renderCalendar();
-    this.renderDayDetail(dateStr);
+    this._refreshScheduleViews(dateStr);
   },
 
   moveScheduleItem(dateStr, idx, dir) {
@@ -1565,18 +1572,19 @@ const APP = {
     if (newIdx < 0 || newIdx >= arr.length) return;
     [arr[idx], arr[newIdx]] = [arr[newIdx], arr[idx]];
     this._saveSchedule();
-    this.renderDayDetail(dateStr);
+    // only re-render detail panels, not the full calendar
+    if (this.scheduleSelectedDate === dateStr) this.renderDayDetail(dateStr);
+    if (document.getElementById('schedule-page')?.style.display !== 'none') this.renderSchedulePageDetail(dateStr);
   },
 
-  // Internal nearest-neighbor sort for a schedule day (no side effects)
+  // Internal nearest-neighbor sort (no side effects)
   _sortScheduleDay(dateStr) {
     const ids = this.schedule[dateStr] || [];
     if (ids.length <= 1) return;
-    const all      = ids.map(id => this.getCompanyById(id)).filter(Boolean);
+    const all          = ids.map(id => this.getCompanyById(id)).filter(Boolean);
     const withCoord    = all.filter(c => { const p = this.getCompanyCoords(c); return p.lat && p.lng; });
     const withoutCoord = all.filter(c => { const p = this.getCompanyCoords(c); return !p.lat || !p.lng; });
     if (withCoord.length <= 1) return;
-
     const origin = this.startLocation || { lat: 23.8, lng: 121.0 };
     const remaining = [...withCoord];
     const sorted = [];
@@ -1597,8 +1605,7 @@ const APP = {
   autoSortScheduleDay(dateStr) {
     this._sortScheduleDay(dateStr);
     this._saveSchedule();
-    this.renderCalendar();
-    this.renderDayDetail(dateStr);
+    this._refreshScheduleViews(dateStr);
     this.notify('已依距離自動排序', 'success');
   },
 
@@ -1614,6 +1621,183 @@ const APP = {
     this.switchTab('route');
     highlightRouteMarkers(this.route);
     this.notify(`已載入 ${companies.length} 家公司到今日行程`, 'success');
+  },
+
+  // ── Schedule Full-Page ─────────────────────────────────────────────────
+  openSchedulePage(dateStr) {
+    document.getElementById('schedule-page').style.display = 'flex';
+    // auto-select: given date → today (if has schedule) → first upcoming
+    if (dateStr) {
+      this.scheduleSelectedDate = dateStr;
+    } else if (!this.scheduleSelectedDate || !this.schedule[this.scheduleSelectedDate]) {
+      const today = this._dateStr(new Date());
+      const upcoming = Object.keys(this.schedule).filter(d => d >= today && this.schedule[d].length).sort();
+      this.scheduleSelectedDate = upcoming[0] || null;
+    }
+    this.renderSchedulePage();
+  },
+
+  closeSchedulePage() {
+    document.getElementById('schedule-page').style.display = 'none';
+  },
+
+  renderSchedulePage() {
+    this.renderSchedulePageDates();
+    if (this.scheduleSelectedDate && this.schedule[this.scheduleSelectedDate]?.length) {
+      this.renderSchedulePageDetail(this.scheduleSelectedDate);
+    } else {
+      const el = document.getElementById('sch-page-right');
+      if (el) el.innerHTML = `
+        <div class="empty-state" style="padding-top:80px">
+          <div class="empty-icon">📅</div>
+          <p>點選左側日期查看或編輯排程<br><br>
+             如尚無排程，請先切換至「排程」分頁，<br>在月曆點擊日期後加入客戶</p>
+        </div>`;
+    }
+  },
+
+  renderSchedulePageDates() {
+    const el = document.getElementById('sch-page-dates');
+    if (!el) return;
+    const today = this._dateStr(new Date());
+    const dates = Object.keys(this.schedule)
+      .filter(d => d >= today && this.schedule[d].length > 0)
+      .sort();
+
+    if (!dates.length) {
+      el.innerHTML = `
+        <div class="sch-left-label">排程日期</div>
+        <div style="padding:20px 14px;text-align:center;color:var(--text-light);font-size:13px;line-height:1.6">
+          尚無排程<br>請至月曆分頁新增
+        </div>`;
+      return;
+    }
+
+    const dayNames = ['日','一','二','三','四','五','六'];
+    el.innerHTML = `<div class="sch-left-label">排程日期（${dates.length} 天）</div>` +
+      dates.map(d => {
+        const date = new Date(d + 'T00:00:00');
+        const m    = date.getMonth() + 1;
+        const day  = date.getDate();
+        const dow  = dayNames[date.getDay()];
+        const cnt  = this.schedule[d].length;
+        const isTd = d === today;
+        const isSel = d === this.scheduleSelectedDate;
+        return `<div class="spd-item${isSel ? ' selected' : ''}${isTd ? ' spd-today-item' : ''}" data-date="${d}">
+          <div class="spd-date-info">
+            <span class="spd-month-day">${m}/${day}${isTd ? ' <span class="spd-today-badge">今日</span>' : ''}</span>
+            <span class="spd-dow">週${dow}</span>
+          </div>
+          <span class="spd-count-badge">${cnt}</span>
+        </div>`;
+      }).join('');
+
+    el.querySelectorAll('.spd-item').forEach(item => {
+      item.addEventListener('click', () => {
+        this.scheduleSelectedDate = item.dataset.date;
+        this.renderSchedulePage();
+      });
+    });
+  },
+
+  renderSchedulePageDetail(dateStr) {
+    const el = document.getElementById('sch-page-right');
+    if (!el) return;
+
+    const ids       = this.schedule[dateStr] || [];
+    const companies = ids.map(id => this.getCompanyById(id)).filter(Boolean);
+    const date      = new Date(dateStr + 'T00:00:00');
+    const dayNames  = ['日','一','二','三','四','五','六'];
+    const dow       = dayNames[date.getDay()];
+    const title     = `${date.getMonth()+1}月${date.getDate()}日（週${dow}）`;
+    const isToday   = dateStr === this._dateStr(new Date());
+
+    // Company list rows
+    const listHtml = companies.length
+      ? companies.map((c, i) => {
+          const crm    = this.crm[this.getCompanyKey(c)] || {};
+          const si     = crm.status ? STATUS_INFO[crm.status] : null;
+          const custom = this.customAddresses[this.getCompanyKey(c)];
+          const addrLine = custom?.custom_address || c.address || '';
+          return `
+            <div class="sch-pg-item">
+              <span class="sch-pg-num">${i + 1}</span>
+              <div class="sch-pg-info">
+                <div class="sch-pg-name">${si ? si.icon + ' ' : ''}${c.short_name || c.name}</div>
+                <div class="sch-pg-meta">${[c.industry, c.city, addrLine ? '📍 ' + addrLine.slice(0, 24) + (addrLine.length > 24 ? '…' : '') : ''].filter(Boolean).join(' · ')}</div>
+              </div>
+              <div class="sch-pg-btns">
+                <button class="btn-icon" data-action="up"     data-idx="${i}" ${i === 0 ? 'disabled' : ''} title="上移">↑</button>
+                <button class="btn-icon" data-action="down"   data-idx="${i}" ${i === companies.length - 1 ? 'disabled' : ''} title="下移">↓</button>
+                <button class="btn-icon" data-action="remove" data-idx="${i}" title="移除" style="color:var(--danger)">×</button>
+              </div>
+            </div>`;
+        }).join('')
+      : '<p style="color:var(--text-light);padding:12px 0">尚無排程，從下方加入客戶</p>';
+
+    // CRM picker
+    const crmCompanies = this.companies.filter(c => {
+      const key = this.getCompanyKey(c);
+      const crm = this.crm[key];
+      const custom = this.customAddresses[key];
+      return (crm?.inOverview || crm?.status || (crm?.notes?.length > 0) || custom) && !ids.includes(c.id);
+    });
+
+    const pickerHtml = crmCompanies.length
+      ? crmCompanies.map(c => {
+          const si = this.crm[this.getCompanyKey(c)]?.status
+            ? STATUS_INFO[this.crm[this.getCompanyKey(c)].status] : null;
+          return `<div class="spd-pick-item" data-id="${c.id}">
+            <span>${si ? si.icon : '⬜'}</span>
+            <span class="spd-pick-name">${c.short_name || c.name}</span>
+            ${c.city ? `<span class="spd-pick-city">${c.city}</span>` : ''}
+            ${c.industry ? `<span class="spd-pick-industry">${c.industry}</span>` : ''}
+            <button class="btn-sm btn-sm-primary" data-action="add" data-id="${c.id}" style="flex-shrink:0">＋ 加入</button>
+          </div>`;
+        }).join('')
+      : '<p style="color:var(--text-light);font-size:13px;padding:8px 0">無可加入的客戶（請先在搜尋結果點選「加入總覽」）</p>';
+
+    el.innerHTML = `
+      <div class="sch-pg-day-header">
+        <h3 class="sch-pg-title">${isToday ? '📌 今日 · ' : ''}${title}</h3>
+        <div class="sch-pg-header-actions">
+          ${companies.length > 1 ? `<button class="btn-secondary" data-action="auto-sort">🔀 自動排序</button>` : ''}
+          ${companies.length ? `<button class="btn-primary" data-action="load-route">🚗 載入行程並計算路線</button>` : ''}
+        </div>
+      </div>
+      <div class="sch-pg-section-label">行程（${companies.length} 站）</div>
+      <div class="sch-pg-list">${listHtml}</div>
+      <div class="sch-pg-add-section">
+        <div class="sch-pg-section-label">從客戶總覽加入</div>
+        <input type="text" class="crm-search-input spd-pick-search" placeholder="搜尋客戶名稱…" style="margin-bottom:0">
+        <div class="spd-pick-list">${pickerHtml}</div>
+      </div>`;
+
+    // Picker search filter
+    el.querySelector('.spd-pick-search')?.addEventListener('input', e => {
+      const q = e.target.value.trim().toLowerCase();
+      el.querySelectorAll('.spd-pick-item').forEach(item => {
+        const name = item.querySelector('.spd-pick-name')?.textContent.toLowerCase() || '';
+        item.style.display = (!q || name.includes(q)) ? '' : 'none';
+      });
+    });
+
+    // Action delegation
+    el.addEventListener('click', e => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      e.stopPropagation();
+      const action = btn.dataset.action;
+      if      (action === 'auto-sort')  { this.autoSortScheduleDay(dateStr); }
+      else if (action === 'load-route') {
+        this.loadScheduleToRoute(dateStr);
+        this.closeSchedulePage();
+      }
+      else if (action === 'up')     { this.moveScheduleItem(dateStr, +btn.dataset.idx, -1); }
+      else if (action === 'down')   { this.moveScheduleItem(dateStr, +btn.dataset.idx,  1); }
+      else if (action === 'remove') { this.removeFromSchedule(dateStr, +btn.dataset.idx); }
+      else if (action === 'add')    { this.addToSchedule(dateStr, +btn.dataset.id); }
+    }, { once: true });
   },
 
   notify(msg, type = 'info') {
@@ -1723,6 +1907,19 @@ const APP = {
       document.getElementById('settings-modal').style.display = 'none';
     });
     document.getElementById('reminder-days').addEventListener('change', () => this.saveSettings());
+
+    // Schedule full page
+    document.getElementById('schedule-page-btn').addEventListener('click', () => this.openSchedulePage());
+    document.getElementById('sch-page-close').addEventListener('click', () => this.closeSchedulePage());
+    document.getElementById('sch-page-today-btn').addEventListener('click', () => {
+      const today = this._dateStr(new Date());
+      if (this.schedule[today]?.length) {
+        this.scheduleSelectedDate = today;
+        this.renderSchedulePage();
+      } else {
+        this.notify('今日尚無排程', 'info');
+      }
+    });
 
     // Schedule calendar navigation
     document.getElementById('cal-prev').addEventListener('click', () => {
