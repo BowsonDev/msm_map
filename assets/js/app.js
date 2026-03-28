@@ -1019,28 +1019,6 @@ const APP = {
 
     el.innerHTML = companies.map(c => this.crmRowHtml(c)).join('');
 
-    // Single delegated listener
-    el.addEventListener('click', e => {
-      const btn = e.target.closest('[data-action]');
-      if (!btn) return;
-      e.stopPropagation();
-      const id     = +btn.dataset.id;
-      const action = btn.dataset.action;
-
-      if (action === 'status') {
-        this.setStatus(id, btn.dataset.status || null);
-      } else if (action === 'route') {
-        this.addToRoute(id);
-        this.renderCRMOverview();
-      } else if (action === 'expand') {
-        if (this.crmExpandedIds.has(id)) this.crmExpandedIds.delete(id);
-        else this.crmExpandedIds.add(id);
-        this.renderCRMOverview();
-      } else if (action === 'note') {
-        const ta = el.querySelector(`.crm-note-ta[data-id="${id}"]`);
-        if (ta) this.addNote(id, ta.value);
-      }
-    }, { once: true });
   },
 
   // ── CRM Full-Page Overview ─────────────────────────────────────────────
@@ -1246,30 +1224,6 @@ const APP = {
         </tbody>
       </table>`;
 
-    body.addEventListener('click', e => {
-      const btn = e.target.closest('[data-action]');
-      if (!btn) return;
-      e.stopPropagation();
-      const id     = +btn.dataset.id;
-      const action = btn.dataset.action;
-      if (action === 'status') {
-        this.setStatus(id, btn.dataset.status || null);
-      } else if (action === 'route') {
-        this.addToRoute(id);
-        this.renderCRMPage();
-      } else if (action === 'detail') {
-        this.showDetail(id);
-      } else if (action === 'expand') {
-        if (this.crmPageExpandedIds.has(id)) this.crmPageExpandedIds.delete(id);
-        else this.crmPageExpandedIds.add(id);
-        this.renderCRMPage();
-      } else if (action === 'note') {
-        const ta = body.querySelector(`.crm-page-note-ta[data-id="${id}"]`);
-        if (ta) this.addNote(id, ta.value);
-      } else if (action === 'remove-overview') {
-        this.removeFromOverview(id);
-      }
-    }, { once: true });
   },
 
   // Import CRM data from CSV (matches by tax_id, updates status/notes/custom_address)
@@ -1447,6 +1401,7 @@ const APP = {
   renderDayDetail(dateStr) {
     const panel = document.getElementById('cal-day-panel');
     if (!panel) return;
+    panel.dataset.date = dateStr;
     panel.style.display = 'block';
 
     const ids       = this.schedule[dateStr] || [];
@@ -1519,19 +1474,6 @@ const APP = {
       });
     });
 
-    // All action buttons via delegation
-    panel.addEventListener('click', e => {
-      const btn = e.target.closest('[data-action]');
-      if (!btn) return;
-      e.stopPropagation();
-      const action = btn.dataset.action;
-      if (action === 'auto-sort')  { this.autoSortScheduleDay(dateStr); }
-      else if (action === 'load-route') { this.loadScheduleToRoute(dateStr); }
-      else if (action === 'up')    { this.moveScheduleItem(dateStr, +btn.dataset.idx, -1); }
-      else if (action === 'down')  { this.moveScheduleItem(dateStr, +btn.dataset.idx,  1); }
-      else if (action === 'remove'){ this.removeFromSchedule(dateStr, +btn.dataset.idx); }
-      else if (action === 'add')   { this.addToSchedule(dateStr, +btn.dataset.id); }
-    }, { once: true });
   },
 
   // ── Schedule Actions ───────────────────────────────────────────────────
@@ -1713,6 +1655,7 @@ const APP = {
   renderSchedulePageDetail(dateStr) {
     const el = document.getElementById('sch-page-right');
     if (!el) return;
+    el.dataset.date = dateStr;
 
     const ids       = this.schedule[dateStr] || [];
     const companies = ids.map(id => this.getCompanyById(id)).filter(Boolean);
@@ -1792,22 +1735,6 @@ const APP = {
       });
     });
 
-    // Action delegation
-    el.addEventListener('click', e => {
-      const btn = e.target.closest('[data-action]');
-      if (!btn) return;
-      e.stopPropagation();
-      const action = btn.dataset.action;
-      if      (action === 'auto-sort')  { this.autoSortScheduleDay(dateStr); }
-      else if (action === 'load-route') {
-        this.loadScheduleToRoute(dateStr);
-        this.closeSchedulePage();
-      }
-      else if (action === 'up')     { this.moveScheduleItem(dateStr, +btn.dataset.idx, -1); }
-      else if (action === 'down')   { this.moveScheduleItem(dateStr, +btn.dataset.idx,  1); }
-      else if (action === 'remove') { this.removeFromSchedule(dateStr, +btn.dataset.idx); }
-      else if (action === 'add')    { this.addToSchedule(dateStr, +btn.dataset.id); }
-    }, { once: true });
   },
 
   notify(msg, type = 'info') {
@@ -1977,6 +1904,90 @@ const APP = {
       e.target.value = '';
     });
     document.getElementById('crm-page-export-btn').addEventListener('click', () => this.exportCSV());
+
+    // Permanent delegated listener: CRM sidebar list
+    document.getElementById('crm-list').addEventListener('click', e => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      e.stopPropagation();
+      const id     = +btn.dataset.id;
+      const action = btn.dataset.action;
+      const el     = document.getElementById('crm-list');
+      if (action === 'status') {
+        this.setStatus(id, btn.dataset.status || null);
+      } else if (action === 'route') {
+        this.addToRoute(id);
+        this.renderCRMOverview();
+      } else if (action === 'expand') {
+        if (this.crmExpandedIds.has(id)) this.crmExpandedIds.delete(id);
+        else this.crmExpandedIds.add(id);
+        this.renderCRMOverview();
+      } else if (action === 'note') {
+        const ta = el.querySelector(`.crm-note-ta[data-id="${id}"]`);
+        if (ta) this.addNote(id, ta.value);
+      }
+    });
+
+    // Permanent delegated listener: CRM full-page body
+    document.getElementById('crm-page-body').addEventListener('click', e => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      e.stopPropagation();
+      const id     = +btn.dataset.id;
+      const action = btn.dataset.action;
+      const body   = document.getElementById('crm-page-body');
+      if (action === 'status') {
+        this.setStatus(id, btn.dataset.status || null);
+      } else if (action === 'route') {
+        this.addToRoute(id);
+        this.renderCRMPage();
+      } else if (action === 'detail') {
+        this.showDetail(id);
+      } else if (action === 'expand') {
+        if (this.crmPageExpandedIds.has(id)) this.crmPageExpandedIds.delete(id);
+        else this.crmPageExpandedIds.add(id);
+        this.renderCRMPage();
+      } else if (action === 'note') {
+        const ta = body.querySelector(`.crm-page-note-ta[data-id="${id}"]`);
+        if (ta) this.addNote(id, ta.value);
+      } else if (action === 'remove-overview') {
+        this.removeFromOverview(id);
+      }
+    });
+
+    // Permanent delegated listener: schedule day detail (sidebar calendar panel)
+    document.getElementById('cal-day-panel').addEventListener('click', e => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      e.stopPropagation();
+      const panel  = document.getElementById('cal-day-panel');
+      const dateStr = panel.dataset.date;
+      if (!dateStr) return;
+      const action = btn.dataset.action;
+      if      (action === 'auto-sort')   { this.autoSortScheduleDay(dateStr); }
+      else if (action === 'load-route')  { this.loadScheduleToRoute(dateStr); }
+      else if (action === 'up')          { this.moveScheduleItem(dateStr, +btn.dataset.idx, -1); }
+      else if (action === 'down')        { this.moveScheduleItem(dateStr, +btn.dataset.idx,  1); }
+      else if (action === 'remove')      { this.removeFromSchedule(dateStr, +btn.dataset.idx); }
+      else if (action === 'add')         { this.addToSchedule(dateStr, +btn.dataset.id); }
+    });
+
+    // Permanent delegated listener: schedule full-page right panel
+    document.getElementById('sch-page-right').addEventListener('click', e => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      e.stopPropagation();
+      const el      = document.getElementById('sch-page-right');
+      const dateStr = el.dataset.date;
+      if (!dateStr) return;
+      const action = btn.dataset.action;
+      if      (action === 'auto-sort')  { this.autoSortScheduleDay(dateStr); }
+      else if (action === 'load-route') { this.loadScheduleToRoute(dateStr); this.closeSchedulePage(); }
+      else if (action === 'up')         { this.moveScheduleItem(dateStr, +btn.dataset.idx, -1); }
+      else if (action === 'down')       { this.moveScheduleItem(dateStr, +btn.dataset.idx,  1); }
+      else if (action === 'remove')     { this.removeFromSchedule(dateStr, +btn.dataset.idx); }
+      else if (action === 'add')        { this.addToSchedule(dateStr, +btn.dataset.id); }
+    });
 
     // Import / Export
     document.getElementById('import-btn').addEventListener('click', () => this.openImport());
