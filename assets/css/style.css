@@ -732,7 +732,7 @@ body {
 
 /* ── Schedule Full-Page ── */
 #schedule-page {
-  position: fixed; inset: 0; z-index: 5000;
+  position: fixed; top: var(--header-height); left: 0; right: 0; bottom: 0; z-index: 5000;
   background: var(--bg); display: flex; flex-direction: column;
 }
 .sch-page-header {
@@ -829,7 +829,7 @@ body {
 
 /* ── CRM Full-Page Overview ── */
 #crm-page {
-  position: fixed; inset: 0; z-index: 5000;
+  position: fixed; top: var(--header-height); left: 0; right: 0; bottom: 0; z-index: 5000;
   background: var(--bg);
   display: flex; flex-direction: column;
 }
