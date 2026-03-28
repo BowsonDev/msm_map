@@ -77,6 +77,10 @@
         客戶總覽
         <span class="count-badge" id="crm-count">0</span>
       </button>
+      <button class="tab-btn" data-tab="schedule">
+        📅 排程
+        <span class="count-badge" id="schedule-count">0</span>
+      </button>
     </div>
 
     <!-- Search results tab -->
@@ -140,6 +144,23 @@
         <p class="summary-note" id="route-source-note"></p>
         <button class="btn-secondary btn-full" id="open-gmaps">🗺 在 Google Maps 開啟路線</button>
       </div>
+    </div>
+
+    <!-- Schedule tab -->
+    <div class="tab-content" id="tab-schedule">
+      <div class="cal-container">
+        <div class="cal-nav">
+          <button class="btn-icon" id="cal-prev" title="上個月">◀</button>
+          <span class="cal-title" id="cal-title"></span>
+          <button class="btn-icon" id="cal-next" title="下個月">▶</button>
+        </div>
+        <div class="cal-weekdays">
+          <span>日</span><span>一</span><span>二</span>
+          <span>三</span><span>四</span><span>五</span><span>六</span>
+        </div>
+        <div class="cal-grid" id="cal-grid"></div>
+      </div>
+      <div class="cal-day-panel" id="cal-day-panel" style="display:none"></div>
     </div>
 
     <!-- CRM overview tab -->
